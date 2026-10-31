@@ -29,6 +29,7 @@ class Stick:
     throttle: float = 0.6   # 0 .. 1
     resets: int = 0         # bumps each time the phone asks to reset the aircraft
     yaw: float = 0.0        # -1 left .. 1 right
+    shots: int = 0          # bumps on each press of the fire button, so a quick tap isn't missed
 
 
 def parse_stick(body: bytes) -> Stick | None:
@@ -37,12 +38,13 @@ def parse_stick(body: bytes) -> Stick | None:
         roll, pitch, throttle = (float(values[key]) for key in ("roll", "pitch", "throttle"))
         yaw = float(values.get("yaw", 0))
         resets = int(values.get("resets", 0))
+        shots = int(values.get("shots", 0))
     except (ValueError, KeyError, TypeError, AttributeError):
         return None
     if not all(math.isfinite(v) for v in (roll, pitch, yaw, throttle)):
         return None
     axis = lambda value: max(-1.0, min(1.0, value))
-    return Stick(axis(roll), axis(pitch), max(0.0, min(1.0, throttle)), resets, axis(yaw))
+    return Stick(axis(roll), axis(pitch), max(0.0, min(1.0, throttle)), resets, axis(yaw), shots)
 
 
 def lan_address() -> str:

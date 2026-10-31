@@ -8,6 +8,7 @@ No camera, no IR clip, no phone app, and no game to install.
 
 - **Look around by turning your head.** The motion sensors in your AirPods steer the view, with prediction to hide their 25 Hz update rate.
 - **Fly with your iPhone.** Hold it upright like a stick. It connects by scanning a QR code, right from Safari.
+- **Dogfight by sight.** Bandits fly in the same world as you, so you chase them down and lock them with your head.
 - **Hear where things are.** Aircraft and warnings are placed in 3D and move as your head turns. The radio tells you where the bandit is, then you turn to find it.
 
 Everything you see and hear is generated: terrain, clouds, aircraft, instruments, and engine sound.
@@ -46,11 +47,20 @@ Hold the phone upright in your right hand, with the side button toward you and t
 | Tilt away from you | Nose down |
 | Tilt left or right | Roll |
 | Swipe up or down on the screen | Throttle |
+| Tap **FIRE** on the phone, or press Space | Shoot |
 | Turn your head | Look around |
 
-Three aircraft are there to look at. One orbits you, so following it takes your full range of movement. Your wingman holds formation off the right wing, and a third flies high and far away for testing fine control.
+Pick a target with the buttons in the simulator, or with the 1, 2, and 3 keys. Your wingman holds formation off the right wing.
 
-Listen for the radar warning: it comes from the bandit's direction. Put the bandit in the middle of your view to hear the seeker tone, and hold it there for your wingman to call it out.
+| Target | What it does |
+|---|---|
+| Easy | Flies slowly with gentle turns. Good for learning the chase. |
+| Fast | Runs near your top speed, turns hard, and breaks when you get on its tail. Takes full throttle. |
+| Dogfight | Starts head-on, then turns to get behind you and shoot. When your wingman calls a break, turn hard until the warning stops. |
+
+**To shoot, look at the bandit.** Your head aims the lock. Hold the bandit in the ring in the middle of your view for about a second, from behind its wing line, within 1.5 km and within 65 degrees of your nose. The ring fills, the tone rises, the word `SHOOT` appears, and a red box appears around the bandit. The lock holds until the bandit leaves your view or gets more than 2 km away. Tap **FIRE** while it holds. If something is stopping a lock, the view says so: `TURN TOWARD`, `GET BEHIND`, `TOO FAR`, or `TOO CLOSE`.
+
+Listen for the radar warning: it comes from the bandit's direction, and it speeds up when the bandit is locking you. A tone sounds when the bandit is in the middle of your view, low until it can lock.
 
 The sliders in the simulator set yaw and pitch sensitivity. They apply at once and are saved to `sim/headflight.toml`. Everything else is documented in `sim/headflight.example.toml`, and saving your copy applies at once too.
 
@@ -65,6 +75,8 @@ iPhone ──motion sensors──> Safari ──HTTPS─────────
 **Head tracking.** AirPods report orientation 25 times a second, and those samples reach the Mac in bursts. A plain passthrough would look late and steppy. So the sender stamps each packet with the sensor's own clock and a gyro rate, and the server uses them to work out where your head is right now, 120 times a second. Corrections fade in rather than snapping the view.
 
 **Phone stick.** iOS only gives motion sensors to HTTPS pages, so the server makes a self-signed certificate and serves the stick page over your LAN. Tilt is measured relative to the position you started in, as a rotation rather than Euler angles, so the axes stay independent even with the phone upright, where Euler angles break down.
+
+**Bandits.** A bandit steers the way an aircraft does: it rolls its lift toward the turn it wants, then pulls. It has the same world coordinates as you, so range and closure are real.
 
 **Sound.** The listener follows the view and your real head together, using HRTF panning in Web Audio. A sound stays on the screen when you glance away from it, which keeps what you see and hear in agreement.
 
@@ -91,14 +103,14 @@ Sample ages add the latency logged by macOS's `relatived` daemon, which uses a c
 |---|---|
 | `sender/` | Reads AirPods motion on the Mac and streams it. A fork of [AirTracker](https://github.com/crippler95/airtracker). |
 | `sim/headflight/` | The server: prediction, head-to-view mapping, phone stick, QR codes. |
-| `sim/headflight/web/` | The simulator page, the 3D cockpit, the sound engine, and the phone page. |
+| `sim/headflight/web/` | The simulator page, the 3D cockpit, the bandits and fight rules, the sound engine, and the phone page. |
 | `sim/tests/` | Tests. Run with `cd sim && python3 -m unittest discover -s tests`. |
 
 No AirPods handy? `python3 -m headflight record trace.csv` saves a head trace, and `python3 -m headflight replay trace.csv --loop` plays it back. Run them from `sim/`.
 
 ## Limitations
 
-- This is a demo. The flight model is simple and arcade-like, and there are no weapons, landings, or low-level flight: the world is only drawn from above 3,900 m.
+- This is a demo. The flight model is simple and arcade-like, a locked missile always hits, and there are no guns, landings, or low-level flight: the world is only drawn from above 3,900 m.
 - The phone stick assumes the right-hand grip described above.
 - Sound lags the picture a little because of Bluetooth, so sound direction trails a fast head turn.
 - Generic HRTF varies from person to person. Front and back are the easiest to confuse, and a small head turn settles it.

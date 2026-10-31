@@ -12,10 +12,7 @@ if [ ! -d sender/build/AirTracker.app ]; then
   sender/scripts/bundle.sh release || exit 1
 fi
 
-if ! ls sim/headflight/web/radio/*.m4a >/dev/null 2>&1; then
-  echo "Generating radio voices (first run only)..."
-  sim/make_voices.sh || exit 1
-fi
+sim/make_voices.sh || exit 1
 
 stop_sender() { pkill -f "AirTracker.app/Contents/MacOS/AirTracker bridge"; }
 

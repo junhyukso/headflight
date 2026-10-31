@@ -17,13 +17,15 @@
   button:active { border-color: var(--accent); }
   #go { padding: 16px 44px; background: var(--accent); color: #06130c; border: 0; font-weight: 700; font-size: 18px; }
   #error { color: var(--bad); }
-  #controls { display: none; height: 100%; grid-template-columns: 1fr 58px; grid-template-rows: auto 1fr auto; gap: 12px; }
+  #controls { display: none; height: 100%; grid-template-columns: 1fr 58px; grid-template-rows: auto 1fr auto auto; gap: 12px; }
   #status { grid-column: 1 / -1; color: var(--muted); font-size: 14px; display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
   #link.ok { color: var(--accent); } #link.bad { color: var(--bad); }
   canvas { width: 100%; height: 100%; min-height: 0; background: var(--panel); border-radius: 12px; display: block; }
   #throttle { position: relative; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
   #throttleFill { position: absolute; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 45%, transparent); }
   #throttleLabel { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+  #fire { grid-column: 1 / -1; height: 112px; border: 0; background: #c8352c; font-size: 22px; font-weight: 700; letter-spacing: .08em; }
+  #fire:active { background: #f0584d; }
   .row { grid-column: 1 / -1; display: flex; gap: 10px; }
   .row button { flex: 1; }
 </style>
@@ -32,7 +34,7 @@
 <section id="intro">
   <h1>Phone stick</h1>
   <p>Hold the phone upright in your right hand like a flight stick, with the side button toward you and the volume buttons away. Press Start in a comfortable position: that becomes center.</p>
-  <p>Tilt forward and back for pitch, left and right for roll, and swipe up and down with your thumb for throttle. Portrait Orientation Lock helps.</p>
+  <p>Tilt forward and back for pitch, left and right for roll, and swipe up and down with your thumb for throttle. Tap FIRE to shoot. Portrait Orientation Lock helps.</p>
   <button id="go">Start</button>
   <p id="error"></p>
 </section>
@@ -40,6 +42,7 @@
   <div id="status"><span id="link">Connecting</span><span id="readout"></span></div>
   <canvas id="pad"></canvas>
   <div id="throttle" aria-label="Throttle"><div id="throttleFill"></div><div id="throttleLabel">60</div></div>
+  <button id="fire">FIRE</button>
   <div class="row"><button id="center">Set center</button><button id="reset">Reset aircraft</button></div>
 </section>
 <script>
@@ -59,7 +62,7 @@ const RAD = Math.PI / 180;
 let attitude = null;        // the phone right now, as a quaternion [w, x, y, z]
 let neutral = null;
 let turn = [0, 0, 0];       // rotation from neutral about the phone's own axes, in degrees
-let stick = { roll: 0, pitch: 0, yaw: 0, throttle: 0.6, resets: 0 };
+let stick = { roll: 0, pitch: 0, yaw: 0, throttle: 0.6, resets: 0, shots: 0 };
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 function multiply([aw, ax, ay, az], [bw, bx, by, bz]) {
@@ -213,6 +216,8 @@ async function start() {
 document.getElementById("go").onclick = start;
 document.getElementById("center").onclick = center;
 document.getElementById("reset").onclick = () => { stick.resets++; center(); };
+// On the press rather than the release, so the shot leaves when the thumb lands.
+document.getElementById("fire").addEventListener("pointerdown", () => { stick.shots++; });
 </script>
 </body>
 </html>

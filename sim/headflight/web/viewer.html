@@ -20,6 +20,17 @@
   #soundPrompt { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 1; flex: none;
                  padding: 10px 20px; border: 0; border-radius: 999px; background: var(--accent); color: #06130c;
                  font-weight: 600; white-space: nowrap; }
+  /* Fixed to the view rather than on the HUD, which turns out of sight with the head. */
+  #sight { position: absolute; top: 50%; left: 50%; width: 10%; aspect-ratio: 1; transform: translate(-50%, -50%);
+           pointer-events: none; }
+  #sight svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
+  #sight circle { fill: none; stroke-width: 1.4; }
+  #sightRing { stroke: rgba(125, 255, 174, .3); }
+  #sightFill { stroke: #7dffae; stroke-width: 2.4; stroke-dasharray: 1; stroke-dashoffset: 1; }
+  #lockStatus { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin: 6px 0 0; color: #7dffae;
+                font: 600 13px/1.2 Menlo, Consolas, monospace; letter-spacing: .06em; white-space: nowrap;
+                text-shadow: 0 1px 3px #000; }
+  #hitFlash { position: absolute; inset: 0; background: #b3201c; opacity: 0; pointer-events: none; }
   #noWebgl { position: absolute; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; }
   aside { background: var(--panel); border-left: 1px solid var(--line); padding: 16px; display: flex;
           flex-direction: column; gap: 14px; overflow: auto; }
@@ -43,6 +54,7 @@
            color: var(--text); font: inherit; cursor: pointer; }
   button:hover { border-color: var(--accent); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
   p.hint { color: var(--muted); font-size: 12px; margin: 0; }
   @media (max-width: 720px) {
     body { grid-template-columns: 1fr; grid-template-rows: 55vh auto; }
@@ -54,6 +66,14 @@
 <body>
 <main>
   <canvas id="view" aria-label="Cockpit view"></canvas>
+  <div id="sight">
+    <svg viewBox="0 0 100 100" aria-hidden="true">
+      <circle id="sightRing" cx="50" cy="50" r="49"></circle>
+      <circle id="sightFill" cx="50" cy="50" r="49" pathLength="1"></circle>
+    </svg>
+    <p id="lockStatus"></p>
+  </div>
+  <div id="hitFlash"></div>
   <button id="soundPrompt">Click anywhere to turn on sound</button>
   <div id="noWebgl">This browser has no WebGL, so the cockpit cannot be drawn. The controls on the right still work.</div>
 </main>
@@ -65,7 +85,13 @@
     <img id="phoneQr" alt="QR code for the phone stick page">
     <p class="hint" id="phoneUrl"></p>
   </div>
+  <div>
+    <div class="label">Target (keys 1, 2, 3). Space fires.</div>
+    <div class="buttons" id="targets"></div>
+  </div>
   <dl>
+    <dt>Target range</dt><dd id="range">-</dd>
+    <dt>Kills / losses</dt><dd id="score">0 / 0</dd>
     <dt>Head yaw / pitch</dt><dd id="head">-</dd>
     <dt>View yaw / pitch</dt><dd id="viewAngles">-</dd>
     <dt>Head data</dt><dd id="pps">-</dd>
@@ -92,11 +118,12 @@
     <button id="recenter">Recenter</button>
     <button id="pause">Pause</button>
   </div>
-  <p class="hint">Sensitivity applies at once and is saved to headflight.toml. Tune it while following the orbiting bandit with your head.</p>
+  <p class="hint">Sensitivity applies at once and is saved to headflight.toml. Tune it while following a target with your head.</p>
 </aside>
 <script type="module">
 import { createCockpit } from "/cockpit.js";
 import { createSound } from "/sound.js";
+import { TARGETS } from "/fight.js";
 
 let state = {};
 let lastEvent = 0;
@@ -138,6 +165,38 @@ function updatePanel() {
   if (state.phoneUrl && !qrImage.getAttribute("src")) qrImage.src = "/phone-qr.svg";
   document.getElementById("phoneHint").hidden = !state.phoneUrl || connected;
 }
+
+function updateFight(scene) {
+  document.getElementById("sightFill").style.strokeDashoffset = 1 - scene.lock;
+  document.getElementById("lockStatus").textContent = scene.status ?? "";
+  document.getElementById("hitFlash").style.opacity = scene.flash * 0.6;
+  document.getElementById("range").textContent = scene.range === null ? "-" : `${(scene.range / 1000).toFixed(1)} km`;
+  document.getElementById("score").textContent = `${scene.kills} / ${scene.losses}`;
+}
+
+const targetButtons = Object.entries(TARGETS).map(([name, { label }]) => {
+  const button = document.createElement("button");
+  button.textContent = label;
+  button.onclick = () => selectTarget(name);
+  document.getElementById("targets").append(button);
+  return [name, button];
+});
+
+function selectTarget(name) {
+  cockpit?.selectTarget(name);
+  for (const [other, button] of targetButtons) button.setAttribute("aria-pressed", other === name);
+}
+
+selectTarget("easy");
+addEventListener("keydown", event => {
+  if (event.code === "Space") {
+    event.preventDefault();
+    cockpit?.fire();
+    return;
+  }
+  const target = targetButtons[Number(event.key) - 1];
+  if (target) selectTarget(target[0]);
+});
 
 const SEND_INTERVAL_MS = 120;   // a drag fires far more often than it needs to be sent
 const SYNC_DELAY_MS = 800;      // leave the slider alone until the server has caught up
@@ -237,6 +296,7 @@ function frame(now) {
     // The sender's signs are left-positive and down-positive; the scene wants right and up.
     const head = { yaw: -(state.headYaw || 0), pitch: -(state.headPitch || 0) };
     const scene = cockpit.render(now / 1000, dt, yaw, pitch, state.phone?.connected ? state.phone : null, head);
+    updateFight(scene);
     if (soundOn) sound.update(scene, dt);
   }
   updatePanel();

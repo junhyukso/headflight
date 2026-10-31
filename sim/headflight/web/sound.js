@@ -4,15 +4,18 @@
 const RADIO_CALLS = ["radar", "fuel", "sector", "formation", "check_six", "clear"];
 const TALLY_CALLS = ["tally", "tally_again"];
 const CLOCK_CALLS = { 12: "bandit_12", 3: "bandit_3", 6: "bandit_6", 9: "bandit_9" };
-const RADIO_FILES = [...RADIO_CALLS, ...TALLY_CALLS, ...Object.values(CLOCK_CALLS)];
+const FIGHT_CALLS = ["contact", "fight_on", "on_your_six", "fox_two", "splash", "hit"];
+const RADIO_FILES = [...RADIO_CALLS, ...TALLY_CALLS, ...Object.values(CLOCK_CALLS), ...FIGHT_CALLS];
 
 const CALL_GAP_S = [11, 22];    // silence between radio calls
 const CLOCK_CALL_ODDS = 0.55;   // share of calls that report where the bandit really is
 const WARNING_GAP_S = 2.4;
+const URGENT_WARNING_GAP_S = 0.6;   // while the bandit is locking us
 const TALLY_AFTER_S = 1.5;      // how long the bandit must stay in view to earn a call
 const TALLY_GAP_S = 40;
 const TALLY_CONE_DEG = 14;
-const TONE_CONE_DEG = 9;        // the seeker tone sounds this close to the view center
+const SEEKER_IDLE_HZ = 620;      // under the view but not lockable, so it doesn't rise
+const SEEKER_LOCK_HZ = [1050, 1650];
 
 function noiseBuffer(ctx, seconds, brown) {
   const buffer = ctx.createBuffer(2, ctx.sampleRate * seconds, ctx.sampleRate);
@@ -150,7 +153,9 @@ export async function createSound() {
   chain(whine, whineFilter, whineLevel, engines);
 
   // Other aircraft.
-  const banditVoice = spatial(ctx, aircraftBus, 420);
+  const banditLevel = gain(ctx, 1);
+  banditLevel.connect(aircraftBus);
+  const banditVoice = spatial(ctx, banditLevel, 420);
   jetVoice(ctx, white, banditVoice, 0.9);
   const wingmanVoice = spatial(ctx, aircraftBus, 45);
   jetVoice(ctx, white, wingmanVoice, 0.8);
@@ -180,9 +185,23 @@ export async function createSound() {
     }
   }
 
-  // Seeker tone: tells you the bandit is under your view without looking at a number.
+  // A low thump, placed where the bandit went down.
+  const blastVoice = spatial(ctx, aircraftBus, 1500);
+
+  function blast(at) {
+    const burst = ctx.createBufferSource();
+    burst.buffer = brown;
+    const level = gain(ctx, 0);
+    chain(burst, filter(ctx, "lowpass", 380, 0.7), level, blastVoice);
+    level.gain.setValueAtTime(2.2, at);
+    level.gain.exponentialRampToValueAtTime(0.001, at + 1.4);
+    burst.start(at, Math.random() * 3, 1.5);
+  }
+
+  // Seeker tone: tells you the bandit is under your view without looking at a number, and rises as
+  // the lock builds.
   const seeker = ctx.createOscillator();
-  seeker.frequency.value = 1050;
+  seeker.frequency.value = SEEKER_IDLE_HZ;
   seeker.start();
   const seekerLevel = gain(ctx, 0);
   chain(seeker, seekerLevel, aircraftBus);
@@ -249,6 +268,7 @@ export async function createSound() {
   let nextWarning = ctx.currentTime + 2;
   let nextTally = 0;
   let inView = 0;
+  const pending = [];     // fight calls waiting for the radio to clear
 
   const seconds = { rumble: 0.1, slow: 0.25 };
 
@@ -269,6 +289,7 @@ export async function createSound() {
       aim(ctx.listener, scene.listener.forward, scene.listener.up);
       place(banditVoice, scene.bandit);
       place(warningVoice, scene.bandit);
+      place(blastVoice, scene.bandit);
       place(wingmanVoice, scene.wingman);
       place(engines, scene.tail);
 
@@ -283,22 +304,33 @@ export async function createSound() {
       windFilter.frequency.setTargetAtTime(700 + 1100 * airspeed, now, seconds.slow);
       windLevel.gain.setTargetAtTime(0.03 + 0.11 * airspeed, now, seconds.slow);
 
-      const seekerOn = scene.banditFromView < TONE_CONE_DEG;
-      seekerLevel.gain.setTargetAtTime(seekerOn ? 0.018 : 0, now, 0.03);
+      banditLevel.gain.setTargetAtTime(scene.banditAlive ? 1 : 0, now, 0.05);
+      const [low, high] = SEEKER_LOCK_HZ;
+      seeker.frequency.setTargetAtTime(scene.locking || scene.locked ? low + (high - low) * scene.lock : SEEKER_IDLE_HZ, now, 0.02);
+      seekerLevel.gain.setTargetAtTime(scene.onSight || scene.locked ? 0.018 : 0, now, 0.03);
 
-      if (now >= nextWarning) {
+      if (scene.banditAlive && now >= nextWarning) {
         warning(now + 0.02);
-        nextWarning = now + WARNING_GAP_S;
+        nextWarning = now + (scene.threat > 0 ? URGENT_WARNING_GAP_S : WARNING_GAP_S);
       }
 
-      inView = scene.banditFromView < TALLY_CONE_DEG ? inView + dt : 0;
+      for (const call of scene.calls) {
+        if (call === "splash") blast(now);
+        pending.push(call);
+      }
+
+      inView = scene.banditAlive && scene.banditFromView < TALLY_CONE_DEG ? inView + dt : 0;
       if (now < radioBusyUntil) return;
-      if (inView > TALLY_AFTER_S && now >= nextTally) {
+      if (pending.length) {
+        transmit(pending.shift());
+        nextCall = Math.max(nextCall, now + between(CALL_GAP_S));
+      } else if (inView > TALLY_AFTER_S && now >= nextTally) {
         transmit(pickCall(TALLY_CALLS));
         nextTally = now + TALLY_GAP_S;
         nextCall = Math.max(nextCall, now + between(CALL_GAP_S));
       } else if (now >= nextCall) {
-        transmit(Math.random() < CLOCK_CALL_ODDS ? clockCall(scene.banditAzimuth) : pickCall(RADIO_CALLS));
+        const clock = scene.banditAlive && (scene.dogfight || Math.random() < CLOCK_CALL_ODDS);
+        transmit(clock ? clockCall(scene.banditAzimuth) : pickCall(RADIO_CALLS));
         nextCall = now + between(CALL_GAP_S);
       }
     },

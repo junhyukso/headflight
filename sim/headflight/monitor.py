@@ -11,6 +11,7 @@ WEB_ROOT = Path(__file__).with_name("web")
 WEB_FILES = {
     "/": ("viewer.html", "text/html; charset=utf-8"),
     "/cockpit.js": ("cockpit.js", "text/javascript; charset=utf-8"),
+    "/fight.js": ("fight.js", "text/javascript; charset=utf-8"),
     "/sound.js": ("sound.js", "text/javascript; charset=utf-8"),
     "/three.module.min.js": ("three.module.min.js", "text/javascript; charset=utf-8"),
 }

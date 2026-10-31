@@ -1,6 +1,7 @@
 // A procedural fighter cockpit flown with head tracking. No asset files: terrain, clouds, aircraft
 // and instruments are all generated here.
 import * as THREE from "three";
+import { Fight } from "/fight.js";
 
 const DEG = Math.PI / 180;
 const HORIZONTAL_FOV = 70;
@@ -22,6 +23,8 @@ const MAX_SPEED = 420;
 // The shaders draw terrain and clouds as seen from above, so stay over the peaks.
 const MIN_ALTITUDE = 3900;
 const MAX_ALTITUDE = 13000;
+const RADAR_RANGE = 10000;      // meters
+const RADAR_ARC = 58;           // degrees either side of the nose
 
 // ---------------------------------------------------------------------------------- shaders
 
@@ -314,11 +317,63 @@ function buildJet({ own = false } = {}) {
   return jet;
 }
 
-function markerTexture() {
+function puffTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  const glow = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  glow.addColorStop(0, "rgba(255, 255, 255, 0.95)");
+  glow.addColorStop(1, "rgba(255, 255, 255, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(canvas);
+}
+
+// Missile smoke and blasts. They stay where they were made in the world while we fly past.
+class Puffs {
+  #pool = [];
+  #next = 0;
+
+  constructor(scene, count = 96) {
+    const map = puffTexture();
+    for (let i = 0; i < count; i++) {
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false, toneMapped: false }));
+      sprite.visible = false;
+      scene.add(sprite);
+      this.#pool.push({ sprite, at: new THREE.Vector3(), age: 0, life: 0, size: 0, growth: 0 });
+    }
+  }
+
+  add(at, color, life, size, growth) {
+    const puff = this.#pool[this.#next];
+    this.#next = (this.#next + 1) % this.#pool.length;
+    Object.assign(puff, { age: 0, life, size, growth });
+    puff.at.copy(at);
+    puff.sprite.material.color.set(color);
+    puff.sprite.visible = true;
+  }
+
+  step(dt, own) {
+    for (const puff of this.#pool) {
+      if (!puff.sprite.visible) continue;
+      puff.age += dt;
+      if (puff.age >= puff.life) {
+        puff.sprite.visible = false;
+        continue;
+      }
+      const size = puff.size + puff.growth * puff.age;
+      puff.sprite.position.copy(puff.at).sub(own);
+      puff.sprite.scale.set(size, size, 1);
+      puff.sprite.material.opacity = 1 - puff.age / puff.life;
+    }
+  }
+}
+
+function markerTexture(color) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 128;
   const ctx = canvas.getContext("2d");
-  ctx.strokeStyle = "#7dffae";
+  ctx.strokeStyle = color;
   ctx.lineWidth = 6;
   ctx.strokeRect(12, 12, 104, 104);
   return new THREE.CanvasTexture(canvas);
@@ -365,7 +420,7 @@ function createHud() {
 
   return {
     texture,
-    draw({ pitch, roll, heading, knots, feet, throttle }) {
+    draw({ pitch, roll, heading, knots, feet, throttle, target }) {
       ctx.clearRect(0, 0, size, size);
       ctx.strokeStyle = ctx.fillStyle = GREEN;
       ctx.lineWidth = 2.5;
@@ -412,6 +467,9 @@ function createHud() {
       ctx.textAlign = "left";
       ctx.fillText(`THR ${Math.round(throttle * 100)}`, mid - 302, mid + 150);
       ctx.fillText("MSL 96", mid + 210, mid + 150);
+      if (target.range !== null) ctx.fillText(`RNG ${(target.range / 1000).toFixed(1)}`, mid - 302, mid + 182);
+      ctx.textAlign = "center";
+      if (target.status) ctx.fillText(target.status, mid, mid + 150);
       texture.needsUpdate = true;
     },
   };
@@ -441,7 +499,7 @@ function consoleTexture() {
   return texture;
 }
 
-function drawRadar(ctx, size, sweep) {
+function drawRadar(ctx, size, sweep, contact) {
   ctx.fillStyle = "#031008";
   ctx.fillRect(0, 0, size, size);
   ctx.save();
@@ -459,13 +517,14 @@ function drawRadar(ctx, size, sweep) {
   ctx.lineWidth = 3;
   ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.sin(angle) * size * 0.84, -Math.cos(angle) * size * 0.84); ctx.stroke();
   ctx.fillStyle = GREEN;
-  for (const [a, r] of [[-0.2, 0.62], [0.12, 0.4], [0.26, 0.72]]) {
-    ctx.fillRect(Math.sin(a * Math.PI) * r * size - 5, -Math.cos(a * Math.PI) * r * size - 5, 10, 10);
+  if (contact && Math.abs(contact.azimuth) < RADAR_ARC && contact.range < RADAR_RANGE) {
+    const a = contact.azimuth * DEG, r = contact.range / RADAR_RANGE * 0.84 * size;
+    ctx.fillRect(Math.sin(a) * r - 5, -Math.cos(a) * r - 5, 10, 10);
   }
   ctx.restore();
   ctx.fillStyle = GREEN;
   ctx.font = `${size / 13}px Menlo, Consolas, monospace`;
-  ctx.fillText("RWS  80", size * 0.06, size * 0.1);
+  ctx.fillText(`RWS  ${RADAR_RANGE / 1000}`, size * 0.06, size * 0.1);
 }
 
 function drawAttitude(ctx, size, pitch, roll) {
@@ -694,30 +753,12 @@ class Flight {
   }
 }
 
-// Each bandit returns its offset from us and its orientation at a given time.
-const BANDITS = [
-  { // Orbits us, so following it takes the whole range of head movement.
-    update(t, jet) {
-      const angle = t * 0.16;
-      jet.position.set(Math.sin(angle) * 900, 130 + Math.sin(t * 0.3) * 90, -Math.cos(angle) * 900);
-      jet.rotation.set(0, -angle - Math.PI / 2, -0.85, "YXZ");
-    },
-  },
-  { // Wingman, holding formation off the right side.
-    update(t, jet, attitude) {
-      jet.position.set(150 + Math.sin(t * 0.21) * 12, -22 + Math.sin(t * 0.34) * 7, -95 + Math.sin(t * 0.13) * 14);
-      jet.position.applyQuaternion(attitude);
-      jet.quaternion.copy(attitude);
-    },
-  },
-  { // High and far, a small target for checking fine control.
-    update(t, jet) {
-      const angle = -t * 0.05 + 1;
-      jet.position.set(Math.sin(angle) * 2600, 1300, -Math.cos(angle) * 2600);
-      jet.rotation.set(0, -angle + Math.PI / 2, 0.35, "YXZ");
-    },
-  },
-];
+// Holds formation off the right side, so it moves with us rather than through the world.
+function holdFormation(t, jet, attitude) {
+  jet.position.set(150 + Math.sin(t * 0.21) * 12, -22 + Math.sin(t * 0.34) * 7, -95 + Math.sin(t * 0.13) * 14);
+  jet.position.applyQuaternion(attitude);
+  jet.quaternion.copy(attitude);
+}
 
 export function createCockpit(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
@@ -750,18 +791,40 @@ export function createCockpit(canvas) {
   outside.add(terrain);
   addLights(outside, 1.5);
 
-  const marker = new THREE.SpriteMaterial({
-    map: markerTexture(), transparent: true, depthTest: false, sizeAttenuation: false, toneMapped: false,
-  });
-  const bandits = BANDITS.map(bandit => {
+  function markedJet(color) {
     const jet = buildJet();
-    jet.rotation.order = "YXZ";
-    const box = new THREE.Sprite(marker);
+    const box = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: markerTexture(color), transparent: true, depthTest: false, sizeAttenuation: false, toneMapped: false,
+    }));
     box.scale.set(0.05, 0.05, 1);
     jet.add(box);
     outside.add(jet);
-    return { ...bandit, jet };
-  });
+    return jet;
+  }
+  const bandit = markedJet("#ff8a5c");
+  const wingman = markedJet(GREEN);
+  const lockBox = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: markerTexture("#ff2d20"), transparent: true, depthTest: false, sizeAttenuation: false, toneMapped: false,
+  }));
+  lockBox.scale.set(0.075, 0.075, 1);
+  bandit.add(lockBox);
+
+  const puffs = new Puffs(outside);
+  const fight = new Fight();
+  fight.effects = {
+    smoke(at) {
+      puffs.add(at, "#77736c", 2.4, 8, 9);
+      puffs.add(at, "#fff1c4", 0.1, 9, 0);
+    },
+    blast(at) {
+      const spot = new THREE.Vector3();
+      puffs.add(at, "#fff6dc", 0.45, 70, 170);
+      for (let i = 0; i < 16; i++) {
+        spot.randomDirection().multiplyScalar(12 + Math.random() * 22).add(at);
+        puffs.add(spot, i % 3 ? "#ff8a2e" : "#2f2a26", 1.4 + Math.random() * 1.6, 34, 40);
+      }
+    },
+  };
 
   const radar = canvasPanel(256, 256);
   const attitudeScreen = canvasPanel(256, 256);
@@ -783,6 +846,11 @@ export function createCockpit(canvas) {
   const listener = new THREE.Quaternion();
   const euler = new THREE.Euler(0, 0, 0, "YXZ");
   const flight = new Flight();
+  const me = { position: new THREE.Vector3(), forward: new THREE.Vector3(), speed: SPEED };
+  const view = new THREE.Vector3();
+  const relative = new THREE.Vector3();
+  const onScreen = new THREE.Vector3();
+  let shots = null;
   let pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
   let width = 0, height = 0;
   let screensDue = 0;
@@ -805,6 +873,12 @@ export function createCockpit(canvas) {
   new ResizeObserver(resize).observe(canvas);
   resize();
 
+  // Degrees right of the nose.
+  function relativeAzimuth() {
+    relative.copy(bandit.position).applyQuaternion(worldToBody);
+    return Math.atan2(relative.x, -relative.z) / DEG;
+  }
+
   return {
     // Trades sharpness for frame rate; head tracking is unusable when the view stutters.
     lowerResolution() {
@@ -814,21 +888,34 @@ export function createCockpit(canvas) {
       return true;
     },
 
-    // `head` is how far the real head is turned, degrees right and up. Returns what the sound needs.
+    selectTarget(name) {
+      fight.select(name);
+    },
+
+    fire() {
+      fight.trigger();
+    },
+
+    // `head` is how far the real head is turned, degrees right and up. Returns what the sound and
+    // the panel need.
     render(seconds, dt, viewYaw, viewPitch, stick, head) {
       flight.step(dt, stick, uniforms.uOffset.value);
+      if (stick) {
+        if (shots !== null && stick.shots !== shots) fight.trigger();
+        shots = stick.shots;
+      }
       uniforms.uTime.value = seconds;
       uniforms.uAltitude.value = flight.altitude;
-      for (const bandit of bandits) bandit.update(seconds, bandit.jet, flight.attitude);
+      holdFormation(seconds, wingman, flight.attitude);
 
       const readout = flight.readout();
       if (seconds >= hudDue) {
         hudDue = seconds + 1 / 30;
-        hud.draw(readout);
+        hud.draw({ ...readout, target: fight });
       }
       if (seconds >= screensDue) {
         screensDue = seconds + 1 / 15;
-        drawRadar(radar.ctx, radar.canvas.width, seconds * 1.4);
+        drawRadar(radar.ctx, radar.canvas.width, seconds * 1.4, fight.alive ? { azimuth: relativeAzimuth(), range: fight.range ?? Infinity } : null);
         radar.texture.needsUpdate = true;
         drawAttitude(attitudeScreen.ctx, attitudeScreen.canvas.width, readout.pitch, readout.roll);
         attitudeScreen.texture.needsUpdate = true;
@@ -850,6 +937,19 @@ export function createCockpit(canvas) {
       bodyFrame.copy(flight.attitude).multiply(rock);
       farCamera.quaternion.copy(bodyFrame).multiply(headTurn);
 
+      me.position.set(uniforms.uOffset.value.x, flight.altitude, uniforms.uOffset.value.y);
+      me.forward.set(0, 0, -1).applyQuaternion(flight.attitude);
+      me.speed = flight.speed;
+      view.set(0, 0, -1).applyQuaternion(farCamera.quaternion);
+      farCamera.updateMatrixWorld();
+      onScreen.copy(bandit.position).project(farCamera);
+      fight.step(dt, me, view, Math.abs(onScreen.x) < 1 && Math.abs(onScreen.y) < 1 && onScreen.z < 1);
+      bandit.visible = fight.alive;
+      lockBox.visible = fight.locked;
+      bandit.position.copy(fight.bandit.position).sub(me.position);
+      fight.bandit.orient(bandit);
+      puffs.step(dt, me.position);
+
       // The cockpit is drawn in the aircraft's own frame, so the sun moves around it instead.
       worldToBody.copy(bodyFrame).invert();
       cockpitSun.position.copy(SUN).applyQuaternion(worldToBody);
@@ -863,19 +963,29 @@ export function createCockpit(canvas) {
       // sound stays on the monitor when you glance aside. Both together are what the ears see.
       euler.set(head.pitch * DEG, -head.yaw * DEG, 0);
       listener.copy(farCamera.quaternion).multiply(headTurn.setFromEuler(euler));
-      const bandit = bandits[0].jet.position;
-      const relative = bandit.clone().applyQuaternion(worldToBody);
-      const view = new THREE.Vector3(0, 0, -1).applyQuaternion(farCamera.quaternion);
       return {
         listener: {
           forward: new THREE.Vector3(0, 0, -1).applyQuaternion(listener).toArray(),
           up: new THREE.Vector3(0, 1, 0).applyQuaternion(listener).toArray(),
         },
-        bandit: bandit.toArray(),
-        wingman: bandits[1].jet.position.toArray(),
+        bandit: bandit.position.toArray(),
+        banditAlive: fight.alive,
+        dogfight: Boolean(fight.kind.attacks),
+        wingman: wingman.position.toArray(),
         tail: new THREE.Vector3(0, 0, 11).applyQuaternion(bodyFrame).toArray(),
-        banditAzimuth: Math.atan2(relative.x, -relative.z) / DEG,     // degrees right of the nose
-        banditFromView: view.angleTo(bandit) / DEG,
+        banditAzimuth: relativeAzimuth(),
+        banditFromView: view.angleTo(bandit.position) / DEG,
+        range: fight.range,
+        onSight: fight.onSight,
+        status: fight.status,
+        locked: fight.locked,
+        locking: fight.locking,
+        lock: fight.lock,
+        threat: fight.threat,
+        flash: fight.flash,
+        kills: fight.kills,
+        losses: fight.losses,
+        calls: fight.takeCalls(),
         throttle: flight.throttle,
         airspeed: (flight.speed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED),
       };

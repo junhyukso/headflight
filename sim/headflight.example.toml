@@ -22,7 +22,7 @@ fade_ms = 300           # then ease the view back to center over this time
 invert = true           # head right = view right; set false if it runs backwards
 sensitivity = 0.7       # also on a slider in the simulator
 deadzone = 1.0          # head degrees around center that do nothing
-curve = [[0, 0], [10, 25], [25, 100], [40, 180]]
+curve = [[0, 0], [10, 25], [25, 85], [45, 150], [70, 175]]
 
 [pitch]
 invert = true           # head up = view up; set false if it runs backwards
@@ -32,7 +32,7 @@ curve = [[0, 0], [10, 20], [25, 60], [35, 90]]
 
 [auto_center]           # slowly absorbs sensor drift while you look at the screen
 enabled = true
-window_deg = 8.0        # only within this many degrees of center
+window_deg = 3.0        # only within this many degrees of center; wider pulls center toward slow looks
 max_speed = 5.0         # only when the head moves slower than this (deg/s)
 settle_s = 2.0          # after holding that for this long
-rate = 0.4              # move neutral this many degrees per second
+rate = 0.15             # move neutral this many degrees per second

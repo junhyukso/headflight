@@ -199,9 +199,17 @@ class MappingTests(unittest.TestCase):
         self.assertGreater(just_past, 0)
         self.assertLess(just_past, 0.05)
 
+    def test_view_keeps_following_through_a_full_head_turn(self):
+        cfg = Config()
+        views = [abs(head_to_view(cfg.yaw, -head)) for head in range(0, 91)]
+        steps = [after - before for before, after in zip(views, views[1:])]
+        self.assertLess(max(steps), 3)              # no racing around to the rear
+        self.assertGreater(min(steps[2:]), 0)       # and no sudden stop within a neck's reach
+        self.assertLess(views[-1], 180)
+
     def test_view_stops_at_the_end_of_the_curve(self):
         cfg = Config()
-        self.assertEqual(head_to_view(cfg.yaw, -500), 180)
+        self.assertEqual(head_to_view(cfg.yaw, -500), 175)
         self.assertEqual(head_to_view(cfg.pitch, -500), 90)
 
 
@@ -254,7 +262,7 @@ class HeadViewTests(unittest.TestCase):
     def test_auto_center_absorbs_slow_drift_near_center(self):
         view = HeadView(Config())
         self.feed(view, 0.3)
-        out = self.feed(view, 8.0, start=0.3, yaw=2.0, seq_start=1000)
+        out = self.feed(view, 17.0, start=0.3, yaw=2.0, seq_start=1000)
         self.assertLess(abs(out.head_yaw), 0.3)
         self.assertAlmostEqual(view.neutral_yaw, 2.0, delta=0.3)
 
@@ -264,6 +272,13 @@ class HeadViewTests(unittest.TestCase):
         out = self.feed(view, 8.0, start=0.3, yaw=25.0, seq_start=1000)
         self.assertAlmostEqual(view.neutral_yaw, 0.0, delta=0.01)
         self.assertAlmostEqual(out.head_yaw, 25.0, delta=0.5)
+
+    def test_auto_center_leaves_a_small_look_held_for_a_long_time_alone(self):
+        view = HeadView(Config())
+        self.feed(view, 0.3)
+        out = self.feed(view, 30.0, start=0.3, yaw=6.0, seq_start=1000)
+        self.assertAlmostEqual(view.neutral_yaw, 0.0, delta=0.01)
+        self.assertAlmostEqual(out.head_yaw, 6.0, delta=0.5)
 
     def test_auto_center_can_be_disabled(self):
         cfg = Config()
@@ -472,7 +487,7 @@ class ViewerFileTests(unittest.TestCase):
         m = monitor.Monitor(port)
         self.addCleanup(m.close)
         expected = {"/": "text/html", "/?yaw=90": "text/html", "/cockpit.js": "text/javascript",
-                    "/sound.js": "text/javascript", "/three.module.min.js": "text/javascript"}
+                    "/fight.js": "text/javascript", "/sound.js": "text/javascript", "/three.module.min.js": "text/javascript"}
         for path, content_type in expected.items():
             with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=2) as response:
                 self.assertTrue(response.headers["Content-Type"].startswith(content_type), path)
@@ -506,6 +521,9 @@ class PhoneTests(unittest.TestCase):
     def test_parse_clamps_values_and_rejects_junk(self):
         self.assertEqual(phone.parse_stick(b'{"roll": 2, "pitch": -3, "throttle": 9, "resets": 2}'), phone.Stick(1, -1, 1, 2))
         self.assertEqual(phone.parse_stick(b'{"roll": 0.5, "pitch": 0.1, "throttle": 0.2}').resets, 0)
+        self.assertEqual(phone.parse_stick(b'{"roll": 0, "pitch": 0, "throttle": 0, "shots": 3}').shots, 3)
+        self.assertEqual(phone.parse_stick(b'{"roll": 0, "pitch": 0, "throttle": 0}').shots, 0)
+        self.assertIsNone(phone.parse_stick(b'{"roll": 0, "pitch": 0, "throttle": 0, "shots": "x"}'))
         for body in (b'nonsense', b'[1]', b'{"roll": 1}', b'{"roll": "x", "pitch": 0, "throttle": 0}',
                      b'{"roll": NaN, "pitch": 0, "throttle": 0}', b'{"roll": Infinity, "pitch": 0, "throttle": 0}'):
             self.assertIsNone(phone.parse_stick(body), body)
@@ -552,9 +570,9 @@ class PhoneTests(unittest.TestCase):
                 self.assertIn("Phone stick", response.read().decode("utf-8"))
 
             self.assertFalse(server.snapshot(time.perf_counter())["connected"])
-            self.assertEqual(post("/stick", b'{"roll": 0.5, "pitch": -0.25, "throttle": 0.8, "resets": 1}'), 204)
+            self.assertEqual(post("/stick", b'{"roll": 0.5, "pitch": -0.25, "throttle": 0.8, "resets": 1, "shots": 2}'), 204)
             state = server.snapshot(time.perf_counter())
-            self.assertEqual(state, {"roll": 0.5, "pitch": -0.25, "yaw": 0.0, "throttle": 0.8, "resets": 1, "connected": True})
+            self.assertEqual(state, {"roll": 0.5, "pitch": -0.25, "yaw": 0.0, "throttle": 0.8, "resets": 1, "shots": 2, "connected": True})
             self.assertFalse(server.snapshot(time.perf_counter() + 2)["connected"])
             self.assertEqual(post("/stick", b'junk'), 400)
             self.assertEqual(post("/elsewhere", b'{}'), 404)

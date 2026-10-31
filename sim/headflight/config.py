@@ -37,7 +37,7 @@ class Axis:
 
 def _yaw() -> Axis:
     # Yaw arrives as left-positive; the view wants right-positive.
-    return Axis(invert=True, sensitivity=0.7, curve=[[0, 0], [10, 25], [25, 100], [40, 180]])
+    return Axis(invert=True, sensitivity=0.7, curve=[[0, 0], [10, 25], [25, 85], [45, 150], [70, 175]])
 
 
 def _pitch() -> Axis:
@@ -48,10 +48,10 @@ def _pitch() -> Axis:
 @dataclass
 class AutoCenter:
     enabled: bool = True
-    window_deg: float = 8.0     # only near center, so deliberate looks are left alone
+    window_deg: float = 3.0     # only right at center: following something slowly is not looking ahead
     max_speed: float = 5.0      # deg/s; the head must be settled
     settle_s: float = 2.0       # for this long before correcting
-    rate: float = 0.4           # deg/s pull of neutral toward the current pose
+    rate: float = 0.15          # deg/s pull of neutral toward the current pose
 
 
 @dataclass

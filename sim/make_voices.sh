@@ -1,6 +1,6 @@
 #!/bin/bash
-# Generates the radio voices with macOS speech. They are made on your Mac on first run rather
-# than stored in this repository, because Apple's terms limit redistributing system voices.
+# Generates any missing radio voices with macOS speech. They are made on your Mac rather than
+# stored in this repository, because Apple's terms limit redistributing system voices.
 mkdir -p "$(dirname "$0")/headflight/web/radio"
 cd "$(dirname "$0")/headflight/web/radio" || exit 1
 
@@ -9,6 +9,8 @@ WINGMAN="Daniel"
 
 line() {
   local voice="$1" name="$2" text="$3"
+  [ -f "${name}.m4a" ] && return
+  echo "Generating radio voice: $name"
   say -v "$voice" -r 195 -o "${name:?}.aiff" "$text" || say -r 195 -o "${name:?}.aiff" "$text" || exit 1
   afconvert -f m4af -d aac -b 32000 "${name}.aiff" "${name}.m4a" || exit 1
   rm -f "${name:?}.aiff"
@@ -26,3 +28,9 @@ line "$WINGMAN" check_six "Lead, check your six."
 line "$WINGMAN" clear "Two, all clear on my side."
 line "$WINGMAN" tally "Good eyes. Target in sight."
 line "$WINGMAN" tally_again "Target confirmed. Stay on him."
+line "$CONTROL" contact "Skywatch. New contact, off your nose."
+line "$CONTROL" fight_on "Skywatch. Bandit on your nose, closing fast. Fight's on."
+line "$CONTROL" hit "You're hit. Resetting the fight."
+line "$WINGMAN" on_your_six "Break! He's on your six!"
+line "$WINGMAN" fox_two "Good tone. Fox two."
+line "$WINGMAN" splash "Splash one. Good kill."
