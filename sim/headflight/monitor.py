@@ -3,7 +3,6 @@
 import json
 import queue
 import threading
-import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import NamedTuple
@@ -15,7 +14,6 @@ WEB_FILES = {
     "/sound.js": ("sound.js", "text/javascript; charset=utf-8"),
     "/three.module.min.js": ("three.module.min.js", "text/javascript; charset=utf-8"),
 }
-STREAM_HZ = 60
 SENSITIVITY_RANGE = (0.1, 3.0)
 
 
@@ -43,9 +41,13 @@ class Monitor:
         self.phone_qr: str | None = None    # SVG, set when the phone stick is running
         radio_files = {path.name for path in (WEB_ROOT / "radio").glob("*.m4a")}
         self._state = "{}"
+        self._version = 0
+        self._changed = threading.Condition()
         monitor = self
 
         class Handler(BaseHTTPRequestHandler):
+            disable_nagle_algorithm = True  # state updates are tiny and must not wait for each other
+
             def log_message(self, *args) -> None:
                 pass
 
@@ -99,11 +101,12 @@ class Monitor:
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
+                seen = -1
                 try:
                     while True:
-                        self.wfile.write(f"data: {monitor._state}\n\n".encode())
+                        state, seen = monitor._next_state(seen)
+                        self.wfile.write(f"data: {state}\n\n".encode())
                         self.wfile.flush()
-                        time.sleep(1 / STREAM_HZ)
                 except (BrokenPipeError, ConnectionError):
                     pass
 
@@ -112,7 +115,17 @@ class Monitor:
         threading.Thread(target=self._server.serve_forever, daemon=True).start()
 
     def publish(self, state: dict) -> None:
-        self._state = json.dumps(state)
+        text = json.dumps(state)
+        with self._changed:
+            self._state = text
+            self._version += 1
+            self._changed.notify_all()
+
+    def _next_state(self, seen: int) -> tuple[str, int]:
+        """Blocks until there is a state newer than `seen`, so each update leaves as it is made."""
+        with self._changed:
+            self._changed.wait_for(lambda: self._version != seen, timeout=1)
+            return self._state, self._version
 
     def close(self) -> None:
         self._server.shutdown()

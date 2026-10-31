@@ -126,6 +126,7 @@ def run(cfg_path: str, phone_on: bool) -> None:
                 "pps": rate.value(now), "ageMs": out.age_ms,
                 "yawSensitivity": view.cfg.yaw.sensitivity, "pitchSensitivity": view.cfg.pitch.sensitivity,
                 "phone": phone.snapshot(now) if phone else None, "phoneUrl": phone.url if phone else None,
+                "sentMs": time.time() * 1000,
             })
 
             if now >= next_slow:

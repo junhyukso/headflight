@@ -9,8 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - Relay UDP output (port 4250) carrying sensor time and angular rates. See docs/PROTOCOL.md.
-- Silent audio keep-alive. On AirPods Pro it removes the 156-202 ms motion gaps seen with no
-  audio playing. On by default; `--no-keepalive` disables it for the bridge.
+- Silent audio keep-alive. On AirPods Pro it makes the 160 ms motion gaps seen with no audio
+  playing much rarer, from 6 per 1,000 samples to about 1 per 2,000. On by default;
+  `--no-keepalive` disables it for the bridge.
 
 ### Changed
 

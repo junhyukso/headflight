@@ -1,4 +1,5 @@
 import csv
+import json
 import ctypes
 import math
 import os
@@ -421,6 +422,46 @@ class TuneTests(unittest.TestCase):
         self.assertEqual(post(b'{"axis": "pitch", "sensitivity": 50}'), 400)
         self.assertEqual(post(b'{"axis": "pitch", "sensitivity": 0.6}', "text/plain"), 415)
         self.assertTrue(m.commands.empty())
+
+
+class StateStreamTests(unittest.TestCase):
+    def setUp(self):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            self.port = probe.getsockname()[1]
+        self.monitor = monitor.Monitor(self.port)
+        self.addCleanup(self.monitor.close)
+
+    def test_a_waiting_client_gets_a_new_state_immediately(self):
+        self.monitor.publish({"n": 1})
+        _, seen = self.monitor._next_state(-1)
+        threading.Timer(0.05, self.monitor.publish, [{"n": 2}]).start()
+        started = time.perf_counter()
+        state, newer = self.monitor._next_state(seen)
+        self.assertEqual(json.loads(state), {"n": 2})
+        self.assertGreater(newer, seen)
+        self.assertLess(time.perf_counter() - started, 0.5)     # well under the idle timeout
+
+    def test_an_idle_stream_still_wakes_up(self):
+        self.monitor.publish({"n": 1})
+        _, seen = self.monitor._next_state(-1)
+        with mock.patch.object(self.monitor._changed, "wait_for", return_value=False):
+            state, same = self.monitor._next_state(seen)
+        self.assertEqual((json.loads(state), same), ({"n": 1}, seen))
+
+    def test_every_update_reaches_a_browser_style_client(self):
+        with socket.create_connection(("127.0.0.1", self.port), timeout=2) as client:
+            client.sendall(b"GET /events HTTP/1.1\r\nHost: x\r\n\r\n")
+            stream = client.makefile("rb")
+            while stream.readline() not in (b"\r\n", b""):
+                pass
+            for n in range(1, 6):
+                self.monitor.publish({"n": n})
+                while True:
+                    line = stream.readline()
+                    if line.startswith(b"data: ") and json.loads(line[6:]).get("n") == n:
+                        break
+            self.assertEqual(n, 5)
 
 
 class ViewerFileTests(unittest.TestCase):

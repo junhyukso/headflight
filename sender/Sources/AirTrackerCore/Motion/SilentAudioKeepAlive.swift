@@ -2,8 +2,8 @@ import AVFoundation
 import Foundation
 
 /// Plays digital silence to the default output. Measured on AirPods Pro under macOS 15.5:
-/// motion arrives at a steady 25 Hz (40 ms max gap) while audio runs, against gaps of
-/// 156-202 ms without it. The engine stops itself on route changes, so it is restarted then.
+/// gaps of about 160 ms in the motion stream fall from 6 per 1,000 samples without audio to
+/// about 1 per 2,000 with it. The engine stops itself on route changes, so it is restarted then.
 public final class SilentAudioKeepAlive: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let source = AVAudioSourceNode { _, _, _, bufferList in

@@ -17,7 +17,7 @@ class Network:
 @dataclass
 class Filter:
     rate_hz: float = 120        # how often the view is updated
-    lookahead_ms: float = 40    # how far ahead of the newest sensor sample to aim
+    lookahead_ms: float = 60    # how far ahead of the newest sensor sample to aim
     max_extrapolate_ms: float = 120  # stop dead-reckoning after this long without data
     blend_ms: float = 35        # time to hide the correction when a new sample arrives
     rate_floor: float = 1.5     # deg/s of gyro treated as noise

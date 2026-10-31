@@ -70,6 +70,7 @@
     <dt>View yaw / pitch</dt><dd id="viewAngles">-</dd>
     <dt>Head data</dt><dd id="pps">-</dd>
     <dt>Delivery delay</dt><dd id="age">-</dd>
+    <dt>Head data at frame</dt><dd id="frameAge">-</dd>
     <dt>Frame rate</dt><dd id="fps">-</dd>
     <dt>Phone stick</dt><dd id="phoneState">-</dd>
     <dt>Sound</dt><dd id="soundState">off</dd>
@@ -99,6 +100,7 @@ import { createSound } from "/sound.js";
 
 let state = {};
 let lastEvent = 0;
+let frameAge = 0;           // how old the head data is when a frame is drawn, smoothed for reading
 
 // ?yaw=120&pitch=10 fixes the view, for looking at one angle without moving your head.
 const params = new URLSearchParams(location.search);
@@ -127,6 +129,8 @@ function updatePanel() {
   document.getElementById("viewAngles").textContent = fmt(state.viewYaw, state.viewPitch);
   document.getElementById("pps").textContent = `${state.pps} packets/s`;
   document.getElementById("age").textContent = `${state.ageMs.toFixed(0)} ms`;
+  frameAge += (Date.now() - state.sentMs - frameAge) * 0.05;
+  document.getElementById("frameAge").textContent = `${frameAge.toFixed(0)} ms`;
   const connected = Boolean(state.phone?.connected);
   document.getElementById("phoneState").textContent = !state.phone ? "off" : connected ? "flying" : "waiting";
   document.getElementById("phoneUrl").textContent = state.phoneUrl ?? "";

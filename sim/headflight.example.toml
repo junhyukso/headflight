@@ -8,7 +8,7 @@ phone_port = 4252       # the phone stick page
 
 [filter]
 rate_hz = 120           # how often the view is updated
-lookahead_ms = 40       # how far ahead of the newest sensor sample to aim; raise if the view feels late
+lookahead_ms = 60       # how far ahead of the newest sensor sample to aim; raise if the view feels late, lower if it overshoots
 max_extrapolate_ms = 120 # how long to keep predicting when data stops
 blend_ms = 35           # time to hide each sample's correction; raise if you see 25 Hz stepping
 rate_floor = 1.5        # gyro readings below this (deg/s) count as noise

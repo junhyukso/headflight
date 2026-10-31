@@ -20,7 +20,7 @@ fi
 stop_sender() { pkill -f "AirTracker.app/Contents/MacOS/AirTracker bridge"; }
 
 stop_sender     # a killed terminal can leave one behind, playing silent audio
-open -n sender/build/AirTracker.app --args bridge --host 127.0.0.1
+open -n sender/build/AirTracker.app --args bridge --host 127.0.0.1 --no-json
 trap stop_sender EXIT
 trap 'exit 0' HUP INT TERM
 (sleep 2 && open http://127.0.0.1:4251) &

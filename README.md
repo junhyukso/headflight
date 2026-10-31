@@ -75,13 +75,15 @@ Taken on the tested hardware from recordings of real head movement.
 | | |
 |---|---|
 | Sensor rate | 25 Hz, 40 ms apart, no lost packets |
-| Delivery delay above the fastest sample | median 30 ms, worst 96 ms |
+| Age of a sample when it reaches the server | median 20 to 30 ms depending on the run, 90% within 38 ms, worst 47 ms |
 | Noise with the head still | 0.08 degrees |
 | Gyro rate against actual movement | correlation 1.000, gain 1.01 |
 | Error predicting 40 ms ahead while moving | down 89%, from 3.3 to 0.4 degrees |
-| Compared with plain passthrough | 56 ms ahead, 20 times smoother |
+| Compared with plain passthrough | 68 ms ahead, 18 times smoother |
+| Age of the head data when a frame is drawn | median 7 ms, 95% within 9 ms |
+| Motion gaps of about 160 ms | 1 per 2,000 samples with silent audio playing, 6 per 1,000 without |
 
-Delays are relative to the fastest sample seen. The fixed delay between the sensor and the Mac can't be measured this way, so these are not end-to-end latency figures.
+Sample ages add the latency logged by macOS's `relatived` daemon, which uses a clock synced over Bluetooth, to the time from that daemon to our server, about 1 ms. The timestamps CoreMotion gives apps can't measure this: they are evenly spaced rather than true sensor times, about 25 ms earlier than the synced ones. Time from a frame being drawn to light leaving the screen isn't measured.
 
 ## Project layout
 
