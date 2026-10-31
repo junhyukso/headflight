@@ -7,16 +7,17 @@ const GRAVITY = 9.8;
 const UP = new THREE.Vector3(0, 1, 0);
 
 // Where a bandit may go. The world is only drawn from above 3,900 m.
-const FLOOR = 4500;
+const FLOOR = 4600;
 const CEILING = 11500;
-const FLOOR_LOOKAHEAD_S = 4;     // bandits start pulling out this far ahead of the limits
+const FLOOR_LOOKAHEAD_S = 7;    // bandits start pulling out this far ahead of the limits
 const LEASH = 7000;             // past this range a bandit comes back to find you
 const RUN_IN_S = 6;             // a new bandit holds its course this long, which gives you time to react
 
 const PASS_ABOVE = 120;         // meters; a bandit aims this far over you, so a head-on pass misses
 const BREAK_RANGE = 2500;       // someone this close...
 const BREAK_ARC = 60 * DEG;     // ...and this near a bandit's tail makes it break
-const BREAK_SPEED = 1.15;       // share of its normal speed while breaking
+const BREAK_SPEED = 1.1;        // share of its normal speed while breaking
+const BANDIT_TURN_SHARE = 0.8;  // of the G limit; it never makes a mistake, so it can't pull as hard as you
 const JINK_GAP_S = [1.5, 3];
 
 // The lock: hold the bandit in the middle of your view, from behind it and close enough. Once locked
@@ -42,7 +43,7 @@ const SIX_CALL_GAP_S = 8;
 
 export const TARGETS = {
   easy: { label: "Easy", speed: 210, turn: 11 * DEG, roll: 70 * DEG, leg: [10, 16], swing: [30, 80], climb: 200 },
-  fast: { label: "Fast", speed: 370, turn: 26 * DEG, roll: 200 * DEG, leg: [5, 9], swing: [60, 150], climb: 700, breaks: true },
+  fast: { label: "Fast", speed: 340, limitedSpeed: 300, turn: 26 * DEG, roll: 200 * DEG, leg: [5, 9], swing: [60, 150], climb: 700, breaks: true },
   dogfight: { label: "Dogfight", speed: 300, turn: 19 * DEG, roll: 180 * DEG, breaks: true, attacks: true },
 };
 
@@ -79,10 +80,10 @@ class Bandit {
   }
 
   // Rolls the lift toward the turn it wants, then pulls, which is all an aircraft can do.
-  #fly(dt, kind, speed) {
+  #fly(dt, kind, speed, systems) {
     const { forward, up } = this;
     across.copy(wanted).addScaledVector(forward, -forward.dot(wanted));
-    const rate = Math.min(kind.turn, Math.atan2(across.length(), forward.dot(wanted)) * 2);
+    const rate = Math.min(kind.turn, systems.turnLimit(this.speed) * BANDIT_TURN_SHARE, Math.atan2(across.length(), forward.dot(wanted)) * 2);
     level.copy(UP).addScaledVector(forward, -forward.y);
     lift.copy(across.normalize()).multiplyScalar(this.speed * rate).addScaledVector(level, GRAVITY);
     const force = lift.length();
@@ -130,11 +131,12 @@ class Bandit {
     wanted.copy(this.forward).multiplyScalar(0.25).add(this.#jink).normalize();
   }
 
-  step(dt, me, kind) {
+  step(dt, me, kind, systems) {
     const { position, forward } = this;
     toMe.copy(me.position).sub(position);
     const range = toMe.length();
-    let speed = kind.speed;
+    // Hard turns cost you speed under the G limit, so a target has to be slower to stay catchable.
+    let speed = (systems.realistic && kind.limitedSpeed) || kind.speed;
     if (kind.breaks && range < BREAK_RANGE && -forward.dot(toMe) / range > Math.cos(BREAK_ARC)) {
       this.#evade(dt);
       speed *= BREAK_SPEED;
@@ -150,7 +152,7 @@ class Bandit {
     if (altitude < FLOOR) wanted.y += (FLOOR - altitude) / 300;
     if (altitude > CEILING) wanted.y -= (altitude - CEILING) / 300;
     wanted.normalize();
-    this.#fly(dt, kind, speed);
+    this.#fly(dt, kind, speed, systems);
   }
 
   orient(jet) {
@@ -175,12 +177,18 @@ export class Fight {
   kills = 0;
   losses = 0;
   effects = { smoke() {}, blast() {} };
+  systems;
   #calls = [];
   #wait = 0;
   #missile = null;
   #smokeDue = 0;
   #sixCallDue = 0;
   #triggered = false;
+
+  // `systems` says what the aircraft's switches allow.
+  constructor(systems = { seekerOn: true, armed: true, canFire: true, launched() {}, turnLimit: () => Infinity }) {
+    this.systems = systems;
+  }
 
   select(name) {
     this.kind = TARGETS[name];
@@ -189,6 +197,11 @@ export class Fight {
 
   takeCalls() {
     return this.#calls.splice(0);
+  }
+
+  // Flares break the bandit's lock.
+  dispense() {
+    this.threat = 0;
   }
 
   // Fires on the next step, if there is a lock to fire on.
@@ -241,10 +254,13 @@ export class Fight {
 
   // The word for the HUD and the view.
   get status() {
-    return this.threat > 0 ? "BREAK" : this.locked ? "SHOOT" : this.locking ? "LOCK" : this.blocked;
+    if (this.threat > 0) return "BREAK";
+    if (this.locked) return this.systems.canFire ? "SHOOT" : this.systems.armed ? "NO MSL" : "SAFE";
+    return this.locking ? "LOCK" : this.blocked;
   }
 
   #lockFault(direction, me) {
+    if (!this.systems.seekerOn) return "SELECT A/A";
     if (me.forward.angleTo(direction) > LOCK_OFF_NOSE) return "TURN TOWARD";
     if (this.bandit.forward.dot(direction) < TAIL_ASPECT) return "GET BEHIND";
     if (this.range > LOCK_RANGE[1]) return "TOO FAR";
@@ -261,7 +277,7 @@ export class Fight {
       if (this.#wait <= 0) this.#spawn(me);
       return;
     }
-    this.bandit.step(dt, me, this.kind);
+    this.bandit.step(dt, me, this.kind, this.systems);
 
     const direction = new THREE.Vector3().copy(this.bandit.position).sub(me.position);
     this.range = direction.length();
@@ -270,7 +286,7 @@ export class Fight {
     this.onSight = view.angleTo(direction) < LOCK_CONE;
     const fault = this.#lockFault(direction, me);
     this.blocked = this.onSight ? fault : null;
-    if (this.locked && (!onScreen || this.range > HOLD_RANGE)) {
+    if (this.locked && (!onScreen || this.range > HOLD_RANGE || !this.systems.seekerOn)) {
       this.locked = false;
       this.lock = 0;
     }
@@ -279,7 +295,8 @@ export class Fight {
       this.lock = THREE.MathUtils.clamp(this.lock + dt * (this.locking ? 1 / LOCK_TIME_S : -1 / LOCK_FADE_S), 0, 1);
       this.locked = this.locking && this.lock >= 1;
     }
-    if (this.#triggered && this.locked) {
+    if (this.#triggered && this.locked && this.systems.canFire) {
+      this.systems.launched();
       this.#missile = me.position.clone();
       this.#missile.y -= MISSILE_DROP;
       this.#calls.push("fox_two");

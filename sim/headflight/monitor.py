@@ -12,6 +12,11 @@ WEB_FILES = {
     "/": ("viewer.html", "text/html; charset=utf-8"),
     "/cockpit.js": ("cockpit.js", "text/javascript; charset=utf-8"),
     "/fight.js": ("fight.js", "text/javascript; charset=utf-8"),
+    "/avionics.js": ("avionics.js", "text/javascript; charset=utf-8"),
+    "/classic.js": ("classic.js", "text/javascript; charset=utf-8"),
+    "/hud.js": ("hud.js", "text/javascript; charset=utf-8"),
+    "/switches.js": ("switches.js", "text/javascript; charset=utf-8"),
+    "/panel.js": ("panel.js", "text/javascript; charset=utf-8"),
     "/sound.js": ("sound.js", "text/javascript; charset=utf-8"),
     "/three.module.min.js": ("three.module.min.js", "text/javascript; charset=utf-8"),
 }

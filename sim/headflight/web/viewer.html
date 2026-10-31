@@ -55,6 +55,16 @@
   button:hover { border-color: var(--accent); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  details { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+  details[open] > * + * { margin-top: 10px; }
+  summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+  summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #menuToggle { position: absolute; top: 12px; right: 12px; z-index: 2; flex: none; width: 36px; height: 36px; padding: 0;
+                background: rgba(12, 17, 23, .7); }
+  body.menuHidden { grid-template-columns: 1fr; }
+  body.menuHidden aside { display: none; }
+  #tooltip { position: absolute; z-index: 2; display: none; padding: 3px 8px; border-radius: 4px; pointer-events: none;
+             background: rgba(12, 17, 23, .88); color: var(--text); font-size: 12px; white-space: nowrap; }
   p.hint { color: var(--muted); font-size: 12px; margin: 0; }
   @media (max-width: 720px) {
     body { grid-template-columns: 1fr; grid-template-rows: 55vh auto; }
@@ -74,6 +84,8 @@
     <p id="lockStatus"></p>
   </div>
   <div id="hitFlash"></div>
+  <div id="tooltip"></div>
+  <button id="menuToggle" aria-label="Show or hide the menu" aria-expanded="true">☰</button>
   <button id="soundPrompt">Click anywhere to turn on sound</button>
   <div id="noWebgl">This browser has no WebGL, so the cockpit cannot be drawn. The controls on the right still work.</div>
 </main>
@@ -85,43 +97,62 @@
     <img id="phoneQr" alt="QR code for the phone stick page">
     <p class="hint" id="phoneUrl"></p>
   </div>
-  <div>
-    <div class="label">Target (keys 1, 2, 3). Space fires.</div>
+  <details data-section="flight" open>
+    <summary>Flight</summary>
+    <div class="label">Target (keys 1, 2, 3)</div>
     <div class="buttons" id="targets"></div>
-  </div>
-  <dl>
-    <dt>Target range</dt><dd id="range">-</dd>
-    <dt>Kills / losses</dt><dd id="score">0 / 0</dd>
-    <dt>Head yaw / pitch</dt><dd id="head">-</dd>
-    <dt>View yaw / pitch</dt><dd id="viewAngles">-</dd>
-    <dt>Head data</dt><dd id="pps">-</dd>
-    <dt>Delivery delay</dt><dd id="age">-</dd>
-    <dt>Head data at frame</dt><dd id="frameAge">-</dd>
-    <dt>Frame rate</dt><dd id="fps">-</dd>
-    <dt>Phone stick</dt><dd id="phoneState">-</dd>
-    <dt>Sound</dt><dd id="soundState">off</dd>
-  </dl>
-  <div class="tuning">
-    <button id="sound">Turn sound on</button>
-    <label>Volume <output id="volumeOutput">80%</output>
-      <input type="range" id="volume" min="0" max="1" step="0.05" value="0.8">
-    </label>
-    <p class="hint">Turn off Spatial Audio for your AirPods. This page does its own head tracking.</p>
-    <label>Yaw sensitivity <output id="yawOutput">×1.00</output>
-      <input type="range" id="yawSlider" min="0.2" max="2" step="0.05" value="1">
-    </label>
-    <label>Pitch sensitivity <output id="pitchOutput">×1.00</output>
-      <input type="range" id="pitchSlider" min="0.2" max="2" step="0.05" value="1">
-    </label>
-  </div>
-  <div class="buttons">
-    <button id="recenter">Recenter</button>
-    <button id="pause">Pause</button>
-  </div>
-  <p class="hint">Sensitivity applies at once and is saved to headflight.toml. Tune it while following a target with your head.</p>
+    <div class="label">Cockpit</div>
+    <div class="buttons" id="cockpits"></div>
+    <div class="label">Controls</div>
+    <div class="buttons" id="controlModes"></div>
+    <p class="hint" id="controlHint"></p>
+    <dl>
+      <dt>Target range</dt><dd id="range">-</dd>
+      <dt>Kills / losses</dt><dd id="score">0 / 0</dd>
+    </dl>
+  </details>
+  <details data-section="tracking" open>
+    <summary>Head tracking</summary>
+    <div class="tuning">
+      <label>Yaw sensitivity <output id="yawOutput">×1.00</output>
+        <input type="range" id="yawSlider" min="0.2" max="2" step="0.05" value="1">
+      </label>
+      <label>Pitch sensitivity <output id="pitchOutput">×1.00</output>
+        <input type="range" id="pitchSlider" min="0.2" max="2" step="0.05" value="1">
+      </label>
+    </div>
+    <div class="buttons">
+      <button id="recenter">Recenter</button>
+      <button id="pause">Pause</button>
+    </div>
+    <p class="hint">Sensitivity applies at once and is saved to headflight.toml.</p>
+  </details>
+  <details data-section="sound">
+    <summary>Sound</summary>
+    <div class="tuning">
+      <button id="sound">Turn sound on</button>
+      <label>Volume <output id="volumeOutput">80%</output>
+        <input type="range" id="volume" min="0" max="1" step="0.05" value="0.8">
+      </label>
+      <p class="hint">Turn off Spatial Audio for your AirPods. This page does its own head tracking.</p>
+    </div>
+  </details>
+  <details data-section="status">
+    <summary>Status</summary>
+    <dl>
+      <dt>Head yaw / pitch</dt><dd id="head">-</dd>
+      <dt>View yaw / pitch</dt><dd id="viewAngles">-</dd>
+      <dt>Head data</dt><dd id="pps">-</dd>
+      <dt>Delivery delay</dt><dd id="age">-</dd>
+      <dt>Head data at frame</dt><dd id="frameAge">-</dd>
+      <dt>Frame rate</dt><dd id="fps">-</dd>
+      <dt>Phone stick</dt><dd id="phoneState">-</dd>
+      <dt>Sound</dt><dd id="soundState">off</dd>
+    </dl>
+  </details>
 </aside>
 <script type="module">
-import { createCockpit } from "/cockpit.js";
+import { COCKPITS, createCockpit } from "/cockpit.js";
 import { createSound } from "/sound.js";
 import { TARGETS } from "/fight.js";
 
@@ -168,11 +199,90 @@ function updatePanel() {
 
 function updateFight(scene) {
   document.getElementById("sightFill").style.strokeDashoffset = 1 - scene.lock;
-  document.getElementById("lockStatus").textContent = scene.status ?? "";
+  document.getElementById("lockStatus").textContent = scene.status ?? scene.gaze ?? "";
   document.getElementById("hitFlash").style.opacity = scene.flash * 0.6;
+  const tooltip = document.getElementById("tooltip");
+  tooltip.style.display = scene.tooltip ? "block" : "none";
+  if (scene.tooltip) {
+    tooltip.textContent = scene.tooltip.text;
+    tooltip.style.left = `${scene.tooltip.x + 14}px`;
+    tooltip.style.top = `${scene.tooltip.y + 14}px`;
+  }
   document.getElementById("range").textContent = scene.range === null ? "-" : `${(scene.range / 1000).toFixed(1)} km`;
   document.getElementById("score").textContent = `${scene.kills} / ${scene.losses}`;
 }
+
+// Conveniences remembered on this browser. The page works the same without them.
+function remember(key, value) {
+  try { localStorage.setItem(`headflight.${key}`, value); } catch {}
+}
+
+function recall(key) {
+  try { return localStorage.getItem(`headflight.${key}`); } catch { return null; }
+}
+
+function setMenuHidden(hidden) {
+  document.body.classList.toggle("menuHidden", hidden);
+  document.getElementById("menuToggle").setAttribute("aria-expanded", !hidden);
+  remember("menuHidden", hidden ? "1" : "");
+}
+
+document.getElementById("menuToggle").onclick = () => setMenuHidden(!document.body.classList.contains("menuHidden"));
+setMenuHidden(recall("menuHidden") === "1");
+
+for (const section of document.querySelectorAll("details")) {
+  const name = `section.${section.dataset.section}`;
+  const saved = recall(name);
+  if (saved !== null) section.open = saved === "1";
+  section.addEventListener("toggle", () => remember(name, section.open ? "1" : "0"));
+}
+
+const CONTROL_MODES = {
+  easy: ["Easy", "Fire whenever you have a lock. The cockpit runs itself."],
+  realistic: ["Realistic", "Every switch works. Use the mouse, or look at a switch and tap USE on the phone. Set up the jet before you fight."],
+};
+
+const modeButtons = Object.entries(CONTROL_MODES).map(([name, [label]]) => {
+  const button = document.createElement("button");
+  button.textContent = label;
+  button.onclick = () => selectControlMode(name);
+  document.getElementById("controlModes").append(button);
+  return [name, button];
+});
+
+let chosenCockpit = "hornot";
+let chosenMode = recall("controlMode") === "realistic" ? "realistic" : "easy";
+
+function applyControls() {
+  cockpit?.setRealistic(chosenMode === "realistic");
+  for (const [other, button] of modeButtons) button.setAttribute("aria-pressed", other === chosenMode);
+  document.getElementById("controlHint").textContent = chosenCockpit === "bucket" && chosenMode === "realistic"
+    ? "Set ARM to fire. Gear, flaps, speed brake and flares work too, by mouse or with USE on the phone." : CONTROL_MODES[chosenMode][1];
+}
+
+function selectControlMode(name) {
+  chosenMode = name;
+  remember("controlMode", name);
+  applyControls();
+}
+
+const cockpitButtons = Object.entries(COCKPITS).map(([name, label]) => {
+  const button = document.createElement("button");
+  button.textContent = label;
+  button.onclick = () => selectCockpit(name);
+  document.getElementById("cockpits").append(button);
+  return [name, button];
+});
+
+function selectCockpit(name) {
+  chosenCockpit = name;
+  cockpit?.setCockpit(name);
+  for (const [other, button] of cockpitButtons) button.setAttribute("aria-pressed", other === name);
+  remember("cockpit", name);
+  applyControls();
+}
+
+selectCockpit(COCKPITS[recall("cockpit")] ? recall("cockpit") : "hornot");
 
 const targetButtons = Object.entries(TARGETS).map(([name, { label }]) => {
   const button = document.createElement("button");
@@ -194,6 +304,8 @@ addEventListener("keydown", event => {
     cockpit?.fire();
     return;
   }
+  if (event.key === "m") document.getElementById("menuToggle").click();
+  if (event.key === "r") document.getElementById("recenter").click();
   const target = targetButtons[Number(event.key) - 1];
   if (target) selectTarget(target[0]);
 });

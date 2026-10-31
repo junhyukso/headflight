@@ -161,7 +161,9 @@ export async function createSound() {
   jetVoice(ctx, white, wingmanVoice, 0.8);
 
   // Radar warning, placed on the bandit. Noise makes it easy to locate, as a pure beep is not.
-  const warningVoice = spatial(ctx, aircraftBus, 3000);
+  const toneBus = gain(ctx, 1);
+  toneBus.connect(aircraftBus);
+  const warningVoice = spatial(ctx, toneBus, 3000);
 
   function warning(at) {
     for (const offset of [0, 0.13]) {
@@ -204,7 +206,7 @@ export async function createSound() {
   seeker.frequency.value = SEEKER_IDLE_HZ;
   seeker.start();
   const seekerLevel = gain(ctx, 0);
-  chain(seeker, seekerLevel, aircraftBus);
+  chain(seeker, seekerLevel, toneBus);
 
   // Radio: a narrow, clipped channel with its own hiss and a squelch at each end.
   const radioBus = gain(ctx, 1.3);
@@ -305,6 +307,8 @@ export async function createSound() {
       windLevel.gain.setTargetAtTime(0.03 + 0.11 * airspeed, now, seconds.slow);
 
       banditLevel.gain.setTargetAtTime(scene.banditAlive ? 1 : 0, now, 0.05);
+      toneBus.gain.setTargetAtTime(scene.toneVolume / 0.5, now, 0.05);
+      radioBus.gain.setTargetAtTime(1.3 * scene.voiceVolume / 0.8, now, 0.05);
       const [low, high] = SEEKER_LOCK_HZ;
       seeker.frequency.setTargetAtTime(scene.locking || scene.locked ? low + (high - low) * scene.lock : SEEKER_IDLE_HZ, now, 0.02);
       seekerLevel.gain.setTargetAtTime(scene.onSight || scene.locked ? 0.018 : 0, now, 0.03);

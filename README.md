@@ -46,11 +46,11 @@ Hold the phone upright in your right hand, with the side button toward you and t
 | Tilt back toward you | Nose up |
 | Tilt away from you | Nose down |
 | Tilt left or right | Roll |
-| Swipe up or down on the screen | Throttle |
+| Swipe up or down on the right half of the screen | Throttle |
 | Tap **FIRE** on the phone, or press Space | Shoot |
 | Turn your head | Look around |
 
-Pick a target with the buttons in the simulator, or with the 1, 2, and 3 keys. Your wingman holds formation off the right wing.
+Pick a target in the menu, or with the 1, 2, and 3 keys. Your wingman holds formation off the right wing. Press `M` to hide the menu and `R` to recenter.
 
 | Target | What it does |
 |---|---|
@@ -58,7 +58,43 @@ Pick a target with the buttons in the simulator, or with the 1, 2, and 3 keys. Y
 | Fast | Runs near your top speed, turns hard, and breaks when you get on its tail. Takes full throttle. |
 | Dogfight | Starts head-on, then turns to get behind you and shoot. When your wingman calls a break, turn hard until the warning stops. |
 
-**To shoot, look at the bandit.** Your head aims the lock. Hold the bandit in the ring in the middle of your view for about a second, from behind its wing line, within 1.5 km and within 65 degrees of your nose. The ring fills, the tone rises, the word `SHOOT` appears, and a red box appears around the bandit. The lock holds until the bandit leaves your view or gets more than 2 km away. Tap **FIRE** while it holds. If something is stopping a lock, the view says so: `TURN TOWARD`, `GET BEHIND`, `TOO FAR`, or `TOO CLOSE`.
+**To shoot, look at the bandit.** Your head aims the lock. Hold the bandit in the ring in the middle of your view for about a second, from behind its wing line, within 1.5 km and within 65 degrees of your nose. The ring fills, the tone rises, the word `SHOOT` appears, and a red box appears around the bandit. The lock holds until the bandit leaves your view or gets more than 2 km away. Tap **FIRE** while it holds. In Realistic mode the jet has to be set up first, as described below. If something is stopping a lock, the view says so: `TURN TOWARD`, `GET BEHIND`, `TOO FAR`, or `TOO CLOSE`.
+
+### Cockpits
+
+Pick one in the menu. The **Hor'not'** is a working twin-display fighter cockpit. The **Old Bucket** is the simple cockpit HeadFlight started with. Both have a stick and throttle that follow the phone.
+
+### Easy and Realistic
+
+In **Easy** the cockpit runs itself: a lock is all you need to fire. In **Realistic**, set in the menu, every switch is yours. The Old Bucket keeps it simple, with just **ARM**, gear, flaps, speed brake, and flares. Hover over a control to see what it is, click to use it, and right-click or scroll to go back. Drag a knob up or right to turn it up. With your hands on the phone, look at a control so the ring is on it, then tap **USE**. Hold **USE** to go back.
+
+To fight in the Hor'not' in Realistic, press **A/A**, set **MASTER ARM** to ARM, and keep the radar on. You carry six missiles, 30 flares, and 8 to 13 minutes of fuel depending on throttle. The HUD warns you at `BINGO`, then `FUEL LOW`, and the engine stops at `FLAMEOUT`. **Reset aircraft** on the phone refills everything.
+
+The flight controls limit you to 7.5 G, or -3 G pushing, and the HUD shows `G LIM` when you reach it. Hard turns cost speed, and below about 330 knots the wing can't reach the limit, so the tightest turn comes from staying near that speed. Bandits are limited too, a little more than you. Easy has none of this: it's arcade flying, well past what a real jet or pilot could take.
+
+The Hor'not' controls:
+
+| Control | What it does |
+|---|---|
+| **MASTER ARM**, **A/A**, **A/G** | Weapons need ARM and A/A. |
+| **EMER JETT** button, under READY | Drops every missile. |
+| Digital displays and their buttons | Radar, stores, warning, engine, flight control, and attitude pages. |
+| Map display | Your position and the bandit, with its own range buttons. |
+| Keypad, **A/P** | Attitude, heading, or altitude hold. Type a heading or altitude and press ENT. Moving the stick turns it off. |
+| Keypad, **BINGO** | Type a fuel warning level and press ENT. |
+| **COMM 1**, **COMM 2** knobs | Radio voice and warning tone volume. |
+| HUD **SYM** and **BRT** | Hide HUD symbols and set brightness. |
+| Landing gear, flaps | Limit your speed. Flaps also tighten your turn. |
+| **SPD BRK** on the right console | Limits your speed. |
+| **CMDS**, **FLR** | Flares break the bandit's lock. |
+| **RWR** | Turns the threat display on or off. |
+| **RADAR** on the right console | OFF, STBY, or OPR. Without it the HUD and map lose the bandit. |
+| Generators on the left console | With both off, the displays, HUD, and radar go dark. |
+| **FUEL DUMP** on the left console | Dumps fuel. |
+| Panel and console light knobs, display brightness and power | Do what they say. |
+| Master caution | Lights for a new caution. Press it to reset. |
+
+The other console switches, the TCN, ILS, D/L, and BCN keys, and any display button without a label complete the cockpit and have no effect yet.
 
 Listen for the radar warning: it comes from the bandit's direction, and it speeds up when the bandit is locking you. A tone sounds when the bandit is in the middle of your view, low until it can lock.
 
@@ -103,7 +139,7 @@ Sample ages add the latency logged by macOS's `relatived` daemon, which uses a c
 |---|---|
 | `sender/` | Reads AirPods motion on the Mac and streams it. A fork of [AirTracker](https://github.com/crippler95/airtracker). |
 | `sim/headflight/` | The server: prediction, head-to-view mapping, phone stick, QR codes. |
-| `sim/headflight/web/` | The simulator page, the 3D cockpit, the bandits and fight rules, the sound engine, and the phone page. |
+| `sim/headflight/web/` | The simulator page, the world, both cockpits, the aircraft systems, the HUD, the bandits and fight rules, the sound engine, and the phone page. |
 | `sim/tests/` | Tests. Run with `cd sim && python3 -m unittest discover -s tests`. |
 
 No AirPods handy? `python3 -m headflight record trace.csv` saves a head trace, and `python3 -m headflight replay trace.csv --loop` plays it back. Run them from `sim/`.

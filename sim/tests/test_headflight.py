@@ -487,7 +487,8 @@ class ViewerFileTests(unittest.TestCase):
         m = monitor.Monitor(port)
         self.addCleanup(m.close)
         expected = {"/": "text/html", "/?yaw=90": "text/html", "/cockpit.js": "text/javascript",
-                    "/fight.js": "text/javascript", "/sound.js": "text/javascript", "/three.module.min.js": "text/javascript"}
+                    "/fight.js": "text/javascript", "/avionics.js": "text/javascript", "/classic.js": "text/javascript", "/hud.js": "text/javascript", "/switches.js": "text/javascript",
+                    "/panel.js": "text/javascript", "/sound.js": "text/javascript", "/three.module.min.js": "text/javascript"}
         for path, content_type in expected.items():
             with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=2) as response:
                 self.assertTrue(response.headers["Content-Type"].startswith(content_type), path)
@@ -523,6 +524,8 @@ class PhoneTests(unittest.TestCase):
         self.assertEqual(phone.parse_stick(b'{"roll": 0.5, "pitch": 0.1, "throttle": 0.2}').resets, 0)
         self.assertEqual(phone.parse_stick(b'{"roll": 0, "pitch": 0, "throttle": 0, "shots": 3}').shots, 3)
         self.assertEqual(phone.parse_stick(b'{"roll": 0, "pitch": 0, "throttle": 0}').shots, 0)
+        self.assertEqual(phone.parse_stick(b'{"roll": 0, "pitch": 0, "throttle": 0, "uses": 2, "backs": 1}').uses, 2)
+        self.assertEqual(phone.parse_stick(b'{"roll": 0, "pitch": 0, "throttle": 0, "uses": 2, "backs": 1}').backs, 1)
         self.assertIsNone(phone.parse_stick(b'{"roll": 0, "pitch": 0, "throttle": 0, "shots": "x"}'))
         for body in (b'nonsense', b'[1]', b'{"roll": 1}', b'{"roll": "x", "pitch": 0, "throttle": 0}',
                      b'{"roll": NaN, "pitch": 0, "throttle": 0}', b'{"roll": Infinity, "pitch": 0, "throttle": 0}'):
@@ -572,7 +575,7 @@ class PhoneTests(unittest.TestCase):
             self.assertFalse(server.snapshot(time.perf_counter())["connected"])
             self.assertEqual(post("/stick", b'{"roll": 0.5, "pitch": -0.25, "throttle": 0.8, "resets": 1, "shots": 2}'), 204)
             state = server.snapshot(time.perf_counter())
-            self.assertEqual(state, {"roll": 0.5, "pitch": -0.25, "yaw": 0.0, "throttle": 0.8, "resets": 1, "shots": 2, "connected": True})
+            self.assertEqual(state, {"roll": 0.5, "pitch": -0.25, "yaw": 0.0, "throttle": 0.8, "resets": 1, "shots": 2, "uses": 0, "backs": 0, "connected": True})
             self.assertFalse(server.snapshot(time.perf_counter() + 2)["connected"])
             self.assertEqual(post("/stick", b'junk'), 400)
             self.assertEqual(post("/elsewhere", b'{}'), 404)
