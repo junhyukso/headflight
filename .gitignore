@@ -1,0 +1,12 @@
+.DS_Store
+__pycache__/
+*.pyc
+
+# Local files made on first run
+sim/.phone-cert/
+sim/headflight.toml
+sim/headflight/web/radio/
+
+# Not part of this project
+private/
+dist/

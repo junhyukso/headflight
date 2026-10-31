@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HeadFlight</title>
+<style>
+  :root {
+    --bg: #0c1117; --panel: #151c25; --line: #2a3542; --text: #e6edf3; --muted: #8b98a7;
+    --accent: #4cc38a; --warn: #f0a848; --bad: #ef6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); display: grid; grid-template-columns: 1fr 260px;
+         font: 14px/1.4 -apple-system, "Segoe UI", sans-serif; }
+  main { position: relative; min-width: 0; min-height: 0; }
+  canvas#view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  main::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+                background: radial-gradient(ellipse at center, transparent 62%, rgba(0, 0, 0, .34) 100%); }
+  #soundPrompt { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 1; flex: none;
+                 padding: 10px 20px; border: 0; border-radius: 999px; background: var(--accent); color: #06130c;
+                 font-weight: 600; white-space: nowrap; }
+  #noWebgl { position: absolute; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; }
+  aside { background: var(--panel); border-left: 1px solid var(--line); padding: 16px; display: flex;
+          flex-direction: column; gap: 14px; overflow: auto; }
+  h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  #status { align-self: flex-start; padding: 3px 10px; border-radius: 999px; font-weight: 600; font-size: 13px;
+            background: var(--line); }
+  #status.ok { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+  #status.warn { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
+  #status.bad { background: color-mix(in srgb, var(--bad) 22%, transparent); color: var(--bad); }
+  dl { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+  .label { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+  #phoneQr { width: 100%; display: block; border-radius: 6px; }
+  .tuning { display: flex; flex-direction: column; gap: 10px; }
+  .tuning label { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; color: var(--muted); }
+  .tuning output { color: var(--text); font-variant-numeric: tabular-nums; }
+  .tuning input { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--accent); }
+  .buttons { display: flex; gap: 8px; }
+  button { flex: 1; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg);
+           color: var(--text); font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  p.hint { color: var(--muted); font-size: 12px; margin: 0; }
+  @media (max-width: 720px) {
+    body { grid-template-columns: 1fr; grid-template-rows: 55vh auto; }
+    aside { border-left: 0; border-top: 1px solid var(--line); }
+  }
+</style>
+<script type="importmap">{ "imports": { "three": "/three.module.min.js" } }</script>
+</head>
+<body>
+<main>
+  <canvas id="view" aria-label="Cockpit view"></canvas>
+  <button id="soundPrompt">Click anywhere to turn on sound</button>
+  <div id="noWebgl">This browser has no WebGL, so the cockpit cannot be drawn. The controls on the right still work.</div>
+</main>
+<aside>
+  <h1>HeadFlight</h1>
+  <div id="status">Connecting</div>
+  <div id="phoneHint" hidden>
+    <div class="label">Scan with your iPhone camera to fly</div>
+    <img id="phoneQr" alt="QR code for the phone stick page">
+    <p class="hint" id="phoneUrl"></p>
+  </div>
+  <dl>
+    <dt>Head yaw / pitch</dt><dd id="head">-</dd>
+    <dt>View yaw / pitch</dt><dd id="viewAngles">-</dd>
+    <dt>Head data</dt><dd id="pps">-</dd>
+    <dt>Delivery delay</dt><dd id="age">-</dd>
+    <dt>Frame rate</dt><dd id="fps">-</dd>
+    <dt>Phone stick</dt><dd id="phoneState">-</dd>
+    <dt>Sound</dt><dd id="soundState">off</dd>
+  </dl>
+  <div class="tuning">
+    <button id="sound">Turn sound on</button>
+    <label>Volume <output id="volumeOutput">80%</output>
+      <input type="range" id="volume" min="0" max="1" step="0.05" value="0.8">
+    </label>
+    <p class="hint">Turn off Spatial Audio for your AirPods. This page does its own head tracking.</p>
+    <label>Yaw sensitivity <output id="yawOutput">×1.00</output>
+      <input type="range" id="yawSlider" min="0.2" max="2" step="0.05" value="1">
+    </label>
+    <label>Pitch sensitivity <output id="pitchOutput">×1.00</output>
+      <input type="range" id="pitchSlider" min="0.2" max="2" step="0.05" value="1">
+    </label>
+  </div>
+  <div class="buttons">
+    <button id="recenter">Recenter</button>
+    <button id="pause">Pause</button>
+  </div>
+  <p class="hint">Sensitivity applies at once and is saved to headflight.toml. Tune it while following the orbiting bandit with your head.</p>
+</aside>
+<script type="module">
+import { createCockpit } from "/cockpit.js";
+import { createSound } from "/sound.js";
+
+let state = {};
+let lastEvent = 0;
+
+// ?yaw=120&pitch=10 fixes the view, for looking at one angle without moving your head.
+const params = new URLSearchParams(location.search);
+const fixedView = params.has("yaw") ? [Number(params.get("yaw")), Number(params.get("pitch") || 0)] : null;
+
+let cockpit = null;
+try {
+  cockpit = createCockpit(document.getElementById("view"));
+} catch (error) {
+  console.error(error);
+  document.getElementById("noWebgl").style.display = "grid";
+}
+
+const fmt = (a, b, unit = "°") => `${a.toFixed(1)}${unit} / ${b.toFixed(1)}${unit}`;
+
+function updatePanel() {
+  const status = document.getElementById("status");
+  const live = performance.now() - lastEvent < 1000;
+  const [text, tone] = !live ? ["Server stopped", "bad"]
+    : state.paused ? ["Paused", "warn"]
+    : state.tracking ? ["Tracking", "ok"] : ["No AirPods data", "bad"];
+  status.textContent = text;
+  status.className = tone;
+  if (!live || state.headYaw === undefined) return;
+  document.getElementById("head").textContent = fmt(state.headYaw, state.headPitch);
+  document.getElementById("viewAngles").textContent = fmt(state.viewYaw, state.viewPitch);
+  document.getElementById("pps").textContent = `${state.pps} packets/s`;
+  document.getElementById("age").textContent = `${state.ageMs.toFixed(0)} ms`;
+  const connected = Boolean(state.phone?.connected);
+  document.getElementById("phoneState").textContent = !state.phone ? "off" : connected ? "flying" : "waiting";
+  document.getElementById("phoneUrl").textContent = state.phoneUrl ?? "";
+  const qrImage = document.getElementById("phoneQr");
+  if (state.phoneUrl && !qrImage.getAttribute("src")) qrImage.src = "/phone-qr.svg";
+  document.getElementById("phoneHint").hidden = !state.phoneUrl || connected;
+}
+
+const SEND_INTERVAL_MS = 120;   // a drag fires far more often than it needs to be sent
+const SYNC_DELAY_MS = 800;      // leave the slider alone until the server has caught up
+
+function bindSlider(axis) {
+  const slider = document.getElementById(`${axis}Slider`);
+  const output = document.getElementById(`${axis}Output`);
+  const stateKey = `${axis}Sensitivity`;
+  let lastInput = -Infinity;
+  let timer = null;
+
+  const show = value => { output.textContent = `×${Number(value).toFixed(2)}`; };
+  const send = () => {
+    timer = null;
+    fetch("/tune", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ axis, sensitivity: Number(slider.value) }),
+    });
+  };
+  slider.addEventListener("input", () => {
+    lastInput = performance.now();
+    show(slider.value);
+    timer ??= setTimeout(send, SEND_INTERVAL_MS);
+  });
+  return () => {
+    if (state[stateKey] === undefined || performance.now() - lastInput < SYNC_DELAY_MS) return;
+    slider.value = state[stateKey];
+    show(state[stateKey]);
+  };
+}
+
+const syncSliders = ["yaw", "pitch"].map(bindSlider);
+
+// Browsers only start audio from a click, so sound waits for this button.
+let sound = null, soundOn = false;
+const soundButton = document.getElementById("sound");
+const volume = document.getElementById("volume");
+
+async function toggleSound() {
+  soundButton.disabled = true;
+  try {
+    if (sound) {
+      soundOn = !soundOn;
+      await sound.setEnabled(soundOn);
+    } else {
+      sound = await createSound();
+      sound.setVolume(Number(volume.value));
+      soundOn = true;
+    }
+    soundButton.textContent = soundOn ? "Turn sound off" : "Turn sound on";
+    document.getElementById("soundState").textContent = soundOn ? "on" : "off";
+    document.getElementById("soundPrompt").hidden = true;
+  } catch (error) {
+    console.error(error);
+    soundButton.textContent = "Sound unavailable";
+    document.getElementById("soundState").textContent = "unavailable";
+  }
+  soundButton.disabled = false;
+}
+
+soundButton.onclick = toggleSound;
+
+// Sound can only start from a click, and a silent page gives no hint of that, so any click counts.
+addEventListener("click", event => {
+  if (!sound && !soundButton.disabled && event.target !== soundButton) toggleSound();
+});
+
+volume.addEventListener("input", () => {
+  document.getElementById("volumeOutput").textContent = `${Math.round(volume.value * 100)}%`;
+  sound?.setVolume(Number(volume.value));
+});
+
+// Watches the frame rate and gives up resolution before smoothness.
+const TARGET_FPS = 50;
+const THROTTLED_FPS = 10;   // covered or background pages drop to about 1 fps, whatever the GPU can do
+let frames = 0, windowStart = performance.now(), slowWindows = 0;
+
+function trackFrameRate(now) {
+  frames++;
+  if (now - windowStart < 1000) return;
+  const fps = frames * 1000 / (now - windowStart);
+  frames = 0;
+  windowStart = now;
+  document.getElementById("fps").textContent = `${fps.toFixed(0)} fps`;
+  slowWindows = fps >= THROTTLED_FPS && fps < TARGET_FPS ? slowWindows + 1 : 0;
+  if (slowWindows >= 2 && cockpit?.lowerResolution()) slowWindows = 0;
+}
+
+let lastFrame = performance.now();
+
+function frame(now) {
+  const dt = Math.min((now - lastFrame) / 1000, 0.1);
+  lastFrame = now;
+  if (cockpit) {
+    const [yaw, pitch] = fixedView ?? [state.viewYaw || 0, state.viewPitch || 0];
+    // The sender's signs are left-positive and down-positive; the scene wants right and up.
+    const head = { yaw: -(state.headYaw || 0), pitch: -(state.headPitch || 0) };
+    const scene = cockpit.render(now / 1000, dt, yaw, pitch, state.phone?.connected ? state.phone : null, head);
+    if (soundOn) sound.update(scene, dt);
+  }
+  updatePanel();
+  syncSliders.forEach(sync => sync());
+  trackFrameRate(now);
+  requestAnimationFrame(frame);
+}
+
+new EventSource("/events").onmessage = e => {
+  state = JSON.parse(e.data);
+  lastEvent = performance.now();
+};
+document.getElementById("recenter").onclick = () => fetch("/recenter", { method: "POST" });
+document.getElementById("pause").onclick = () => fetch("/pause", { method: "POST" });
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

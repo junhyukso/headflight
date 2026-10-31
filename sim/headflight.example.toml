@@ -1,0 +1,38 @@
+# Copy to headflight.toml and edit. Saving applies changes while the simulator runs.
+# Leave out anything you don't need; missing settings use the values shown here.
+
+[network]
+port = 4250             # UDP port for head packets from the sender
+web_port = 4251         # the simulator page
+phone_port = 4252       # the phone stick page
+
+[filter]
+rate_hz = 120           # how often the view is updated
+lookahead_ms = 40       # how far ahead of the newest sensor sample to aim; raise if the view feels late
+max_extrapolate_ms = 120 # how long to keep predicting when data stops
+blend_ms = 35           # time to hide each sample's correction; raise if you see 25 Hz stepping
+rate_floor = 1.5        # gyro readings below this (deg/s) count as noise
+min_cutoff_hz = 2.0     # filtering while still; lower is steadier and slower
+beta = 0.1              # how far the filter opens with head speed
+stale_ms = 400          # no packets for this long counts as lost tracking
+fade_ms = 300           # then ease the view back to center over this time
+
+# curve = [[head degrees, view degrees], ...]  how far the view turns for a head turn
+[yaw]
+invert = true           # head right = view right; set false if it runs backwards
+sensitivity = 0.7       # also on a slider in the simulator
+deadzone = 1.0          # head degrees around center that do nothing
+curve = [[0, 0], [10, 25], [25, 100], [40, 180]]
+
+[pitch]
+invert = true           # head up = view up; set false if it runs backwards
+sensitivity = 0.55      # also on a slider in the simulator
+deadzone = 1.0          # head degrees around center that do nothing
+curve = [[0, 0], [10, 20], [25, 60], [35, 90]]
+
+[auto_center]           # slowly absorbs sensor drift while you look at the screen
+enabled = true
+window_deg = 8.0        # only within this many degrees of center
+max_speed = 5.0         # only when the head moves slower than this (deg/s)
+settle_s = 2.0          # after holding that for this long
+rate = 0.4              # move neutral this many degrees per second

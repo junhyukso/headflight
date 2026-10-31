@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Phone stick</title>
+<style>
+  :root { --bg: #0c1117; --panel: #151c25; --line: #2a3542; --text: #e6edf3; --muted: #8b98a7; --accent: #4cc38a; --bad: #ef6b6b; }
+  * { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+  html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; touch-action: none; position: fixed; inset: 0; }
+  body { background: var(--bg); color: var(--text); font: 16px/1.45 -apple-system, sans-serif;
+         padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+  #intro { height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px; text-align: center; }
+  h1 { font-size: 22px; margin: 0; }
+  p { margin: 0; color: var(--muted); max-width: 30em; }
+  button { padding: 14px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); font: inherit; touch-action: manipulation; }
+  button:active { border-color: var(--accent); }
+  #go { padding: 16px 44px; background: var(--accent); color: #06130c; border: 0; font-weight: 700; font-size: 18px; }
+  #error { color: var(--bad); }
+  #controls { display: none; height: 100%; grid-template-columns: 1fr 58px; grid-template-rows: auto 1fr auto; gap: 12px; }
+  #status { grid-column: 1 / -1; color: var(--muted); font-size: 14px; display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
+  #link.ok { color: var(--accent); } #link.bad { color: var(--bad); }
+  canvas { width: 100%; height: 100%; min-height: 0; background: var(--panel); border-radius: 12px; display: block; }
+  #throttle { position: relative; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+  #throttleFill { position: absolute; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 45%, transparent); }
+  #throttleLabel { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+  .row { grid-column: 1 / -1; display: flex; gap: 10px; }
+  .row button { flex: 1; }
+</style>
+</head>
+<body>
+<section id="intro">
+  <h1>Phone stick</h1>
+  <p>Hold the phone upright in your right hand like a flight stick, with the side button toward you and the volume buttons away. Press Start in a comfortable position: that becomes center.</p>
+  <p>Tilt forward and back for pitch, left and right for roll, and swipe up and down with your thumb for throttle. Portrait Orientation Lock helps.</p>
+  <button id="go">Start</button>
+  <p id="error"></p>
+</section>
+<section id="controls">
+  <div id="status"><span id="link">Connecting</span><span id="readout"></span></div>
+  <canvas id="pad"></canvas>
+  <div id="throttle" aria-label="Throttle"><div id="throttleFill"></div><div id="throttleLabel">60</div></div>
+  <div class="row"><button id="center">Set center</button><button id="reset">Reset aircraft</button></div>
+</section>
+<script>
+// Degrees for full deflection, the share around center that does nothing, and how gently the
+// response builds from there. Pitch and roll are soft in the middle so a held phone flies level.
+const AXES = {
+  pitch: { range: 40, deadzone: 0.08, curve: 1.8 },
+  roll: { range: 45, deadzone: 0.08, curve: 1.8 },
+  yaw: { range: 35, deadzone: 0.05, curve: 1.5 },
+};
+const YAW_ENABLED = false;   // off after trying it on a real grip; true brings wrist twist back
+const SMOOTHING = 0.4;      // share of each new reading taken, against hand tremor
+const THROTTLE_SWIPE_PX = 280;  // thumb travel for the whole throttle range
+const SEND_MS = 33;
+const RAD = Math.PI / 180;
+
+let attitude = null;        // the phone right now, as a quaternion [w, x, y, z]
+let neutral = null;
+let turn = [0, 0, 0];       // rotation from neutral about the phone's own axes, in degrees
+let stick = { roll: 0, pitch: 0, yaw: 0, throttle: 0.6, resets: 0 };
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+function multiply([aw, ax, ay, az], [bw, bx, by, bz]) {
+  return [
+    aw * bw - ax * bx - ay * by - az * bz,
+    aw * bx + ax * bw + ay * bz - az * by,
+    aw * by - ax * bz + ay * bw + az * bx,
+    aw * bz + ax * by - ay * bx + az * bw,
+  ];
+}
+
+// The browser reports Z-X'-Y' Euler angles, which fall apart near upright. A quaternion does not.
+function fromOrientation(alpha, beta, gamma) {
+  const half = deg => (deg * RAD) / 2;
+  const z = [Math.cos(half(alpha)), 0, 0, Math.sin(half(alpha))];
+  const x = [Math.cos(half(beta)), Math.sin(half(beta)), 0, 0];
+  const y = [Math.cos(half(gamma)), 0, Math.sin(half(gamma)), 0];
+  return multiply(multiply(z, x), y);
+}
+
+// Axis times angle keeps the three axes independent, however the phone is held at neutral.
+function rotationFromNeutral() {
+  const [nw, nx, ny, nz] = neutral;
+  let [w, x, y, z] = multiply([nw, -nx, -ny, -nz], attitude);
+  if (w < 0) [w, x, y, z] = [-w, -x, -y, -z];
+  const size = Math.hypot(x, y, z);
+  const scale = size > 1e-6 ? (2 * Math.atan2(size, w)) / size / RAD : 2 / RAD;
+  return [x * scale, y * scale, z * scale];
+}
+
+function shaped(degrees, { range, deadzone, curve }) {
+  const value = clamp(degrees / range, -1, 1);
+  const size = Math.max(0, Math.abs(value) - deadzone) / (1 - deadzone);
+  return Math.sign(value) * size ** curve;
+}
+
+function onOrientation(event) {
+  if (event.alpha === null) return;
+  attitude = fromOrientation(event.alpha, event.beta, event.gamma);
+  neutral ??= attitude;
+  const now = rotationFromNeutral();
+  turn = turn.map((v, i) => v + (now[i] - v) * SMOOTHING);
+  // Gripped upright like a stick in the right hand: lock button toward the body, volume buttons
+  // away, screen facing left. So the phone's x points back at the pilot, y up, and z to the left.
+  stick.pitch = shaped(-turn[2], AXES.pitch);   // top toward the pilot is a pull
+  stick.roll = shaped(-turn[0], AXES.roll);     // top leaning right is right
+  if (YAW_ENABLED) stick.yaw = shaped(-turn[1], AXES.yaw);  // clockwise from above is right
+}
+
+function center() {
+  neutral = attitude;
+  turn = [0, 0, 0];
+}
+
+async function sendLoop() {
+  const link = document.getElementById("link");
+  for (;;) {
+    const started = performance.now();
+    try {
+      const response = await fetch("/stick", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(stick) });
+      if (!response.ok) throw new Error(response.status);
+      link.textContent = "Connected";
+      link.className = "ok";
+    } catch {
+      link.textContent = "Disconnected";
+      link.className = "bad";
+      await new Promise(done => setTimeout(done, 400));
+    }
+    await new Promise(done => setTimeout(done, Math.max(0, SEND_MS - (performance.now() - started))));
+  }
+}
+
+function drawPad() {
+  const canvas = document.getElementById("pad");
+  const ratio = devicePixelRatio || 1;
+  const w = canvas.clientWidth * ratio, h = canvas.clientHeight * ratio;
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  const c = canvas.getContext("2d");
+  const barHeight = YAW_ENABLED ? 44 * ratio : 0;
+  const size = Math.min(w, h - barHeight) / 2 - 14 * ratio, cx = w / 2, cy = (h - barHeight) / 2;
+  c.clearRect(0, 0, w, h);
+
+  c.strokeStyle = "#2a3542"; c.lineWidth = ratio;
+  c.strokeRect(cx - size, cy - size, size * 2, size * 2);
+  c.beginPath(); c.moveTo(cx - size, cy); c.lineTo(cx + size, cy); c.moveTo(cx, cy - size); c.lineTo(cx, cy + size); c.stroke();
+  c.fillStyle = "#4cc38a";
+  c.beginPath(); c.arc(cx + stick.roll * size, cy + stick.pitch * size, 12 * ratio, 0, 7); c.fill();
+
+  if (YAW_ENABLED) {
+    const barY = h - barHeight * 0.62;
+    c.strokeRect(cx - size, barY, size * 2, 12 * ratio);
+    c.beginPath(); c.moveTo(cx, barY); c.lineTo(cx, barY + 12 * ratio); c.stroke();
+    c.fillRect(Math.min(cx, cx + stick.yaw * size), barY, Math.abs(stick.yaw * size), 12 * ratio);
+  }
+
+  document.getElementById("readout").textContent = `pitch ${stick.pitch.toFixed(2)}  roll ${stick.roll.toFixed(2)}`
+    + (YAW_ENABLED ? `  yaw ${stick.yaw.toFixed(2)}` : "");
+  requestAnimationFrame(drawPad);
+}
+
+function setThrottle(value) {
+  stick.throttle = clamp(value, 0, 1);
+  document.getElementById("throttleFill").style.height = `${stick.throttle * 100}%`;
+  document.getElementById("throttleLabel").textContent = Math.round(stick.throttle * 100);
+}
+
+// The whole screen is the throttle. Swipes move it relatively, so the thumb can start anywhere.
+function bindThrottle() {
+  let lastY = null;
+  addEventListener("pointerdown", event => {
+    lastY = event.target.closest("button") ? null : event.clientY;
+  });
+  addEventListener("pointermove", event => {
+    if (lastY === null) return;
+    setThrottle(stick.throttle + (lastY - event.clientY) / THROTTLE_SWIPE_PX);
+    lastY = event.clientY;
+  });
+  for (const type of ["pointerup", "pointercancel"]) addEventListener(type, () => { lastY = null; });
+  document.addEventListener("touchmove", event => event.preventDefault(), { passive: false });
+}
+
+async function start() {
+  const error = document.getElementById("error");
+  if (!window.isSecureContext) {
+    error.textContent = "Motion sensors need this page to be opened over HTTPS.";
+    return;
+  }
+  // Must run directly from the tap, or iOS refuses to ask.
+  if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
+    try {
+      if (await DeviceOrientationEvent.requestPermission() !== "granted") {
+        error.textContent = "Motion access was denied. Quit Safari, open this page again, and allow it.";
+        return;
+      }
+    } catch (failure) {
+      error.textContent = `Could not request motion access: ${failure.message}`;
+      return;
+    }
+  }
+  addEventListener("deviceorientation", onOrientation);
+  document.getElementById("intro").style.display = "none";
+  document.getElementById("controls").style.display = "grid";
+  navigator.wakeLock?.request("screen").catch(() => {});
+  setTimeout(center, 400);
+  bindThrottle();
+  setThrottle(stick.throttle);
+  drawPad();
+  sendLoop();
+}
+
+document.getElementById("go").onclick = start;
+document.getElementById("center").onclick = center;
+document.getElementById("reset").onclick = () => { stick.resets++; center(); };
+</script>
+</body>
+</html>
